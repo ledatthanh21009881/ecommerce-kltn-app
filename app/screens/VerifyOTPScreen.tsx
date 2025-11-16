@@ -1,0 +1,281 @@
+"use client"
+
+import { useState, useRef, useEffect } from "react"
+import { View, StyleSheet, Alert, KeyboardAvoidingView, Platform, TextInput as RNTextInput } from "react-native"
+import { Text, TextInput, Button, Card, IconButton } from "react-native-paper"
+import { useNavigation, useRoute } from "@react-navigation/native"
+import { authService } from "../services/authService"
+import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
+import { LinearGradient } from 'expo-linear-gradient'
+
+export default function VerifyOTPScreen() {
+  const route = useRoute()
+  const navigation = useNavigation()
+  const email = (route.params as any)?.email || ""
+  const [otp, setOtp] = useState(["", "", "", "", "", ""])
+  const [loading, setLoading] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const inputRefs = useRef<(RNTextInput | null)[]>([])
+
+  // Mask email for display
+  const maskEmail = (email: string) => {
+    if (!email) return ""
+    const [localPart, domain] = email.split("@")
+    if (!domain) return email
+    const maskedLocal = localPart.length > 2 
+      ? localPart.substring(0, 2) + "*".repeat(localPart.length - 2)
+      : localPart
+    return `${maskedLocal}@${domain}`
+  }
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendCooldown])
+
+  const handleOTPChange = (value: string, index: number) => {
+    // Only allow numbers
+    if (value && !/^\d+$/.test(value)) return
+
+    const newOtp = [...otp]
+    newOtp[index] = value.trim()
+    setOtp(newOtp)
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus()
+    }
+  }
+
+  const handleOTPKeyPress = (key: string, index: number) => {
+    if (key === "Backspace" && !otp[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus()
+    }
+  }
+
+  const handleVerify = async () => {
+    const otpCode = otp.join("").trim()
+    if (otpCode.length !== 6) {
+      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ 6 số")
+      return
+    }
+
+    setLoading(true)
+    try {
+      await authService.verifyOTP((email || "").trim().toLowerCase(), otpCode)
+      // Navigate to ResetPassword screen with email and OTP
+      navigation.navigate("ResetPassword" as never, { email, otp: otpCode } as never)
+    } catch (error: any) {
+      const errorMessage = error?.message || "Mã OTP không hợp lệ. Vui lòng thử lại."
+      Alert.alert("Lỗi", errorMessage)
+      // Clear OTP on error
+      setOtp(["", "", "", "", "", ""])
+      inputRefs.current[0]?.focus()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendOTP = async () => {
+    if (resendCooldown > 0) return
+
+    setLoading(true)
+    try {
+      await authService.forgotPassword(email)
+      setResendCooldown(60) // 60 seconds cooldown
+      Alert.alert("Thành công", "Mã OTP mới đã được gửi đến email của bạn")
+    } catch (error: any) {
+      const errorMessage = error?.message || "Không thể gửi lại mã OTP. Vui lòng thử lại sau."
+      Alert.alert("Lỗi", errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <LinearGradient
+        colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
+        style={styles.background}
+      >
+        <View style={styles.content}>
+          {/* Header */}
+          <View style={styles.header}>
+            <IconButton
+              icon="arrow-left"
+              iconColor="white"
+              size={24}
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+            />
+            <View style={styles.logoContainer}>
+              <IconButton
+                icon="shield-check"
+                iconColor="white"
+                size={48}
+                style={styles.logoIcon}
+              />
+            </View>
+            <Text variant="displaySmall" style={styles.title}>
+              Xác nhận mã OTP
+            </Text>
+            <Text variant="bodyLarge" style={styles.subtitle}>
+              Nhập mã đã gửi đến {maskEmail(email)}
+            </Text>
+          </View>
+
+          {/* Form */}
+          <Card style={styles.formCard}>
+            <Card.Content style={styles.form}>
+              <View style={styles.otpContainer}>
+                {otp.map((digit, index) => (
+                  <TextInput
+                    key={index}
+                    inputRef={(ref) => (inputRefs.current[index] = ref)}
+                    value={digit}
+                    onChangeText={(value) => handleOTPChange(value, index)}
+                    onKeyPress={({ nativeEvent }) => handleOTPKeyPress(nativeEvent.key, index)}
+                    mode="outlined"
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    style={styles.otpInput}
+                    contentStyle={{ textAlign: 'center' }}
+                    outlineColor={theme.colors.border}
+                    activeOutlineColor={theme.colors.primary}
+                    autoFocus={index === 0}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.buttonContainer}>
+                <Button
+                  mode="contained"
+                  onPress={handleVerify}
+                  loading={loading}
+                  disabled={loading || otp.join("").length !== 6}
+                  style={styles.verifyButton}
+                  contentStyle={styles.buttonContent}
+                  icon="check-circle"
+                >
+                  Xác nhận
+                </Button>
+
+                <Button
+                  mode="text"
+                  onPress={handleResendOTP}
+                  disabled={loading || resendCooldown > 0}
+                  style={styles.resendButton}
+                  textColor={theme.colors.primary}
+                >
+                  {resendCooldown > 0
+                    ? `Gửi lại sau ${resendCooldown}s`
+                    : "Gửi lại mã OTP"}
+                </Button>
+              </View>
+
+              <View style={styles.footer}>
+                <Text variant="bodySmall" style={styles.footerText}>
+                  Mã OTP có hiệu lực trong 10 phút
+                </Text>
+              </View>
+            </Card.Content>
+          </Card>
+        </View>
+      </LinearGradient>
+    </KeyboardAvoidingView>
+  )
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  background: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    paddingTop: 60,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    margin: 0,
+  },
+  logoContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: borderRadius.round,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    marginTop: spacing.xl,
+  },
+  logoIcon: {
+    margin: 0,
+  },
+  title: {
+    color: "white",
+    fontWeight: "bold",
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: "white",
+    opacity: 0.9,
+    textAlign: 'center',
+  },
+  formCard: {
+    borderRadius: borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+    ...shadows.large,
+  },
+  form: {
+    padding: spacing.lg,
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  otpInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: 'bold',
+    height: 60,
+  },
+  buttonContainer: {
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  verifyButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: borderRadius.md,
+  },
+  resendButton: {
+    marginTop: spacing.sm,
+  },
+  buttonContent: {
+    paddingVertical: spacing.sm,
+  },
+  footer: {
+    alignItems: 'center',
+  },
+  footerText: {
+    color: theme.colors.textTertiary,
+    textAlign: 'center',
+  },
+})
+
