@@ -44,8 +44,9 @@ class NotificationService {
         return null
       }
 
-      // Read EAS projectId from config if available; otherwise call without params
+      // Read projectId from env/config if available; otherwise call without params
       const easProjectId =
+        (process.env as any)?.EXPO_PUBLIC_EAS_PROJECT_ID ||
         (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
         (Constants as any)?.easConfig?.projectId
 

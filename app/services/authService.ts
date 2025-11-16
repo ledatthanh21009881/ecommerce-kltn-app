@@ -46,6 +46,13 @@ class AuthService {
       return this.currentApiBaseUrl
     }
 
+    // 0) Prefer explicit env override if provided at build time (Expo public env)
+    const envApi = (process.env as any)?.EXPO_PUBLIC_API_URL
+    if (envApi && typeof envApi === 'string' && envApi.trim().length > 0) {
+      this.currentApiBaseUrl = envApi.trim()
+      return this.currentApiBaseUrl
+    }
+
     // Try to get saved IP from AsyncStorage
     const savedApiUrl = await AsyncStorage.getItem("apiBaseUrl")
     if (savedApiUrl) {
