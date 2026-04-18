@@ -87,10 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const initializeApp = async () => {
     try {
-      // Try to detect server IP on app startup (only if no saved IP)
-      const savedApiUrl = await AsyncStorage.getItem("apiBaseUrl")
-      if (!savedApiUrl && __DEV__) {
-        console.log("[AuthContext] No saved API URL, attempting to detect server IP...")
+      // In dev mode, always clear cache and detect server IP on app startup
+      // This ensures we use the latest IP (192.168.2.134) instead of cached old IP
+      if (__DEV__) {
+        const savedApiUrl = await AsyncStorage.getItem("apiBaseUrl")
+        const currentIP = "http://192.168.2.134:8000"
+        
+        // If saved URL exists but is different from current IP, clear it
+        if (savedApiUrl && savedApiUrl !== currentIP) {
+          console.log("[AuthContext] Saved IP differs from current IP, clearing cache...")
+          await authService.clearServerCache()
+        }
+        
+        // Always detect server IP in dev mode to ensure we use the latest IP
+        console.log("[AuthContext] Detecting server IP...")
         try {
           await authService.detectServerIP()
           console.log("[AuthContext] Server IP detected successfully")

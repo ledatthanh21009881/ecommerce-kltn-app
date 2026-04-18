@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
+import { Platform } from "react-native"
 import { authService } from "./authService"
 
 interface RequestOptions extends RequestInit {
@@ -100,10 +101,33 @@ class ApiClient {
 
     try {
       // Make request
-      const response = await fetch(url, {
-        ...fetchOptions,
-        headers,
-      })
+      let response: Response
+      try {
+        response = await fetch(url, {
+          ...fetchOptions,
+          headers,
+        })
+      } catch (fetchError: any) {
+        // If network error in dev mode, clear cache and retry with default IP
+        if (__DEV__ && (fetchError.message?.includes('Network request failed') || 
+            fetchError.message?.includes('Failed to fetch') ||
+            fetchError.name === 'TypeError')) {
+          console.log('[ApiClient] Network error detected, clearing cache and retrying...')
+          await AsyncStorage.removeItem("apiBaseUrl")
+          
+          // Retry with fresh base URL
+          const newBaseURL = await this.getBaseURL()
+          const newUrl = endpoint.startsWith("http") ? endpoint : `${newBaseURL}${endpoint}`
+          console.log('[ApiClient] Retrying with new URL:', newUrl)
+          
+          response = await fetch(newUrl, {
+            ...fetchOptions,
+            headers,
+          })
+        } else {
+          throw fetchError
+        }
+      }
 
       // Check if response indicates token error (401, 403)
       const isTokenErrorByStatus = !skipAuth && (response.status === 401 || response.status === 403)

@@ -36,11 +36,20 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
-      ]
+      ],
+      "package": "com.thanhle02032003.mobileappdeliverynew"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3ddb6ee5-8b1a-41cf-86a9-1cc00fda8227"
+      }
+    },
+    "owner": "thanhle02032003"
   }
 }
