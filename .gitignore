@@ -41,6 +41,7 @@ GoogleService-Info.plist
 *.keystore.properties
 
 # --- secrets (do not commit) ---
+*firebase-adminsdk*.json
 google-services.json
 GoogleService-Info.plist
 *.keystore
