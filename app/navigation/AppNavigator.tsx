@@ -71,9 +71,6 @@ function MainTabs() {
             case "Đang làm":
               iconName = focused ? "truck-delivery" : "truck-delivery-outline"
               break
-            case "Đã giao":
-              iconName = focused ? "check-circle" : "check-circle-outline"
-              break
             case "Tài khoản":
               iconName = focused ? "account" : "account-outline"
               break
@@ -93,7 +90,6 @@ function MainTabs() {
     >
       <Tab.Screen name="Đơn hàng" component={HomeStack} />
       <Tab.Screen name="Đang làm" children={() => <OrderStack />} initialParams={{ filter: "delivering" }} />
-      <Tab.Screen name="Đã giao" children={() => <OrderStack />} initialParams={{ filter: "completed" }} />
       <Tab.Screen name="Chat" component={ChatStack} />
       <Tab.Screen name="Tài khoản" component={ProfileScreen} />
     </Tab.Navigator>

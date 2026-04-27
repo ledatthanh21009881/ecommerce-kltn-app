@@ -1,5 +1,5 @@
 import { apiClient } from "./apiClient"
-import type { Order, ShippingActionPayload, ShippingStatus } from "../../lib/types"
+import type { Order, OrderPaymentInfo, ShippingActionPayload, ShippingStatus } from "../../lib/types"
 
 interface GetOrdersParams {
   status?: string
@@ -96,6 +96,19 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
       ? Number(rawCustomerId)
       : undefined
 
+  let payment: OrderPaymentInfo | null = null
+  const rawPay = backendOrder.payment
+  if (rawPay && typeof rawPay === "object") {
+    payment = {
+      method: rawPay.method != null ? String(rawPay.method) : undefined,
+      status: rawPay.status != null ? String(rawPay.status) : undefined,
+      paid_amount:
+        rawPay.paid_amount != null && rawPay.paid_amount !== ""
+          ? Number(rawPay.paid_amount)
+          : undefined,
+    }
+  }
+
   return {
     id: backendOrder.order_id?.toString() || backendOrder.id?.toString() || "",
     customerUserId,
@@ -111,6 +124,7 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
     totalAmount: backendOrder.total_amount || 0,
     shippingFee: backendOrder.shipping_fee || 0,
     codAmount: backendOrder.cod_amount || 0,
+    payment,
     confirmationPhoto: backendOrder.tracking?.photo_proof_url || backendOrder.photo_proof_url,
     shippingStatusUpdatedAt: backendOrder.shipping_status_updated_at,
     shippingEvents,

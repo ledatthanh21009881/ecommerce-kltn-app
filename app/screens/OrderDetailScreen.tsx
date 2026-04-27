@@ -17,6 +17,13 @@ import ShippingTimeline from "../../components/ShippingTimeline"
 import { getShippingStatusConfig } from "../constants/shippingStatus"
 import type { Order } from "../../lib/types"
 
+/** Số shipper cần thu COD (ưu tiên cod_amount, không thì tổng đơn). */
+function codCollectAmount(order: Order): number {
+  const c = Number(order.codAmount ?? 0)
+  const t = Number(order.totalAmount ?? 0)
+  return c > 0 ? c : t
+}
+
 export default function OrderDetailScreen() {
   const navigation = useNavigation<any>()
   const route = useRoute()
@@ -111,6 +118,26 @@ export default function OrderDetailScreen() {
 
     Linking.openURL(url as string).catch(() => {
       Alert.alert("Lỗi", "Không thể mở bản đồ. Vui lòng thử lại sau.")
+    })
+  }
+
+  /** Chuẩn hóa số cho scheme tel: (bỏ khoảng trắng, giữ + và chữ số). */
+  const normalizePhoneForTel = (phone: string) => phone.replace(/\s/g, "").replace(/[^\d+]/g, "")
+
+  const openPhoneDialer = () => {
+    const raw = order?.phone?.trim()
+    if (!raw) {
+      Alert.alert("Thông báo", "Không có số điện thoại khách.")
+      return
+    }
+    const digits = normalizePhoneForTel(raw)
+    if (!digits) {
+      Alert.alert("Thông báo", "Số điện thoại không hợp lệ.")
+      return
+    }
+    const url = `tel:${digits}`
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Lỗi", "Không thể mở ứng dụng gọi điện.")
     })
   }
 
@@ -283,12 +310,28 @@ export default function OrderDetailScreen() {
         </Card>
 
         <Card style={styles.card}>
-          <Card.Title
-            title="Thông tin khách hàng"
-            titleStyle={styles.cardTitle}
-            left={(props) => <IconButton {...props} icon="account" iconColor={theme.colors.primary} />}
-          />
           <Card.Content>
+            <View style={styles.customerHeaderRow}>
+              <View style={styles.customerHeaderLeft}>
+                <IconButton icon="account" iconColor={theme.colors.primary} size={22} style={styles.customerHeaderIcon} />
+                <Text variant="titleMedium" style={styles.cardTitle}>
+                  Thông tin khách hàng
+                </Text>
+              </View>
+              <View style={styles.customerActionCol}>
+                <IconButton
+                  icon="message-text"
+                  mode="contained"
+                  containerColor={theme.colors.primary}
+                  iconColor="white"
+                  size={20}
+                  onPress={openCustomerChat}
+                  style={styles.mapButton}
+                  accessibilityLabel={`Nhắn khách hàng về đơn #${order.id}`}
+                />
+              </View>
+            </View>
+
             <View style={styles.infoSection}>
               <View style={styles.infoRow}>
                 <IconButton icon="account-circle" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
@@ -296,6 +339,7 @@ export default function OrderDetailScreen() {
                   <Text variant="bodySmall" style={styles.infoLabel}>Tên khách hàng</Text>
                   <Text variant="bodyLarge" style={styles.infoValue}>{order.customerName}</Text>
                 </View>
+                <View style={styles.customerActionCol} />
               </View>
 
               <View style={styles.infoRow}>
@@ -304,15 +348,18 @@ export default function OrderDetailScreen() {
                   <Text variant="bodySmall" style={styles.infoLabel}>Địa chỉ giao hàng</Text>
                   <Text variant="bodyLarge" style={styles.infoValue}>{order.address}</Text>
                 </View>
-                <IconButton
-                  icon="map"
-                  mode="contained"
-                  containerColor={theme.colors.primary}
-                  iconColor="white"
-                  size={20}
-                  onPress={openMaps}
-                  style={styles.mapButton}
-                />
+                <View style={styles.customerActionCol}>
+                  <IconButton
+                    icon="map"
+                    mode="contained"
+                    containerColor={theme.colors.primary}
+                    iconColor="white"
+                    size={20}
+                    onPress={openMaps}
+                    style={styles.mapButton}
+                    accessibilityLabel="Mở bản đồ"
+                  />
+                </View>
               </View>
 
               <View style={styles.infoRow}>
@@ -320,6 +367,18 @@ export default function OrderDetailScreen() {
                 <View style={styles.infoContent}>
                   <Text variant="bodySmall" style={styles.infoLabel}>Số điện thoại</Text>
                   <Text variant="bodyLarge" style={styles.infoValue}>{order.phone}</Text>
+                </View>
+                <View style={styles.customerActionCol}>
+                  <IconButton
+                    icon="phone"
+                    mode="contained"
+                    containerColor={theme.colors.primary}
+                    iconColor="white"
+                    size={20}
+                    onPress={openPhoneDialer}
+                    style={styles.mapButton}
+                    accessibilityLabel="Gọi khách hàng"
+                  />
                 </View>
               </View>
 
@@ -329,6 +388,7 @@ export default function OrderDetailScreen() {
                   <Text variant="bodySmall" style={styles.infoLabel}>Thời gian đặt hàng</Text>
                   <Text variant="bodyLarge" style={styles.infoValue}>{new Date(order.createdAt).toLocaleString("vi-VN")}</Text>
                 </View>
+                <View style={styles.customerActionCol} />
               </View>
 
               {Boolean(order.notes) && (
@@ -338,21 +398,92 @@ export default function OrderDetailScreen() {
                     <Text variant="bodySmall" style={styles.infoLabel}>Ghi chú</Text>
                     <Text variant="bodyLarge" style={styles.infoValue}>{order.notes}</Text>
                   </View>
+                  <View style={styles.customerActionCol} />
                 </View>
               )}
-              <Button
-                mode="outlined"
-                icon="message-text-outline"
-                onPress={openCustomerChat}
-                style={styles.chatButton}
-              >
-                Nhắn khách hàng về đơn #{order.id}
-              </Button>
             </View>
           </Card.Content>
         </Card>
 
-        
+        <Card style={styles.card}>
+          <Card.Title
+            title="Thanh toán"
+            titleStyle={styles.cardTitle}
+            left={(props) => <IconButton {...props} icon="cash-multiple" iconColor={theme.colors.primary} />}
+          />
+          <Card.Content>
+            {(() => {
+              const p = order.payment
+              const method = (p?.method || "").toLowerCase()
+              const st = (p?.status || "").toLowerCase()
+
+              if (method === "cod" || method === "cash") {
+                if (st === "confirmed") {
+                  return (
+                    <View>
+                      <Text variant="bodyLarge" style={styles.payHintOk}>
+                        Đã thu COD khi giao hàng
+                      </Text>
+                      {p?.paid_amount != null && p.paid_amount > 0 ? (
+                        <Text variant="bodySmall" style={styles.paySub}>
+                          Số đã thu: {formatCurrency(p.paid_amount)}
+                        </Text>
+                      ) : null}
+                    </View>
+                  )
+                }
+                return (
+                  <View>
+                    <Text variant="bodyMedium" style={styles.payHintWarn}>
+                      Tiền mặt khi giao (COD)
+                    </Text>
+                    <Text variant="headlineSmall" style={styles.payAmount}>
+                      Cần thu: {formatCurrency(codCollectAmount(order))}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.paySub}>
+                      Thu từ khách khi bạn hoàn tất giao hàng trên app
+                    </Text>
+                  </View>
+                )
+              }
+
+              if (st === "confirmed" || st === "paid" || st === "success") {
+                return (
+                  <Text variant="bodyLarge" style={styles.payHintOk}>
+                    Khách đã thanh toán online — không thu tiền mặt
+                  </Text>
+                )
+              }
+
+              if (p && st === "pending") {
+                return (
+                  <Text variant="bodyMedium" style={styles.payHintWarn}>
+                    Chờ khách thanh toán chuyển khoản / QR
+                  </Text>
+                )
+              }
+
+              if (!p && (order.codAmount ?? 0) > 0) {
+                return (
+                  <View>
+                    <Text variant="bodyMedium" style={styles.payHintWarn}>
+                      Tiền mặt khi giao (ước tính)
+                    </Text>
+                    <Text variant="headlineSmall" style={styles.payAmount}>
+                      Cần thu: {formatCurrency(codCollectAmount(order))}
+                    </Text>
+                  </View>
+                )
+              }
+
+              return (
+                <Text variant="bodySmall" style={styles.paySub}>
+                  Kéo xuống để tải lại đơn nếu thiếu thông tin thanh toán
+                </Text>
+              )
+            })()}
+          </Card.Content>
+        </Card>
 
         <Card style={styles.card}>
           <Card.Title
@@ -459,6 +590,33 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: theme.colors.textPrimary,
     fontWeight: "bold",
+    flex: 1,
+  },
+  customerHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  customerHeaderLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 48,
+    marginRight: spacing.sm,
+  },
+  customerHeaderIcon: {
+    margin: 0,
+    marginRight: spacing.xs,
+  },
+  /** Cột phải cố định — icon chat / bản đồ / gọi thẳng hàng */
+  customerActionCol: {
+    width: 48,
+    alignItems: "center",
+    justifyContent: "flex-start",
   },
   infoRow: {
     flexDirection: "row",
@@ -487,9 +645,23 @@ const styles = StyleSheet.create({
   mapButton: {
     margin: 0,
   },
-  chatButton: {
+  payHintOk: {
+    color: theme.colors.success,
+    fontWeight: "600",
+  },
+  payHintWarn: {
+    color: theme.colors.warning,
+    fontWeight: "600",
+    marginBottom: spacing.xs,
+  },
+  payAmount: {
+    color: theme.colors.primary,
+    fontWeight: "700",
     marginTop: spacing.xs,
-    alignSelf: "flex-start",
+  },
+  paySub: {
+    color: theme.colors.textSecondary,
+    marginTop: spacing.xs,
   },
   productRow: {
     flexDirection: "row",

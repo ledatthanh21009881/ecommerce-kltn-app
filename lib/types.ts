@@ -33,6 +33,12 @@ export interface ShippingProof {
   captured_at: string
 }
 
+export type OrderPaymentInfo = {
+  method?: string
+  status?: string
+  paid_amount?: number
+}
+
 export interface Order {
   id: string
   /** users.user_id of the buyer; required for shipper–customer messenger thread */
@@ -49,6 +55,8 @@ export interface Order {
   totalAmount: number
   shippingFee?: number
   codAmount?: number
+  /** Từ API chi tiết đơn — dùng hiển thị COD / đã chuyển khoản */
+  payment?: OrderPaymentInfo | null
   confirmationPhoto?: string
   shippingStatusUpdatedAt?: string
   shippingEvents?: ShippingEvent[]
