@@ -3,15 +3,32 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from "react-native"
 import { Text, Card, Avatar, Chip, ActivityIndicator } from "react-native-paper"
-import { useNavigation } from "@react-navigation/native"
+import { useFocusEffect, useNavigation } from "@react-navigation/native"
 import HeaderBar from "../../components/HeaderBar"
 import { theme, spacing, borderRadius } from "../../styles/theme"
-import { chatService, ConversationItem } from "../services/chatService"
+import { chatService, ConversationItem, shipperConversationNavMeta } from "../services/chatService"
 
-function shipperOrderMetaFromLabel(label?: string): { orderId?: string; orderLabel?: string } {
-  const m = (label || "").match(/^shipper:\d+:order:(\d+)$/)
-  if (!m?.[1]) return {}
-  return { orderId: m[1], orderLabel: `#${m[1]}` }
+function pad2(n: number) {
+  return String(n).padStart(2, "0")
+}
+
+/** Giờ:phút trước, ngày-tháng-năm sau — ví dụ `21:08 27-04-2026` */
+function formatConversationListTime(raw: string | undefined | null): string {
+  if (!raw?.trim()) return ""
+  const s = raw.trim()
+  let d: Date
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) {
+    d = new Date(s.replace(" ", "T"))
+  } else {
+    d = new Date(s)
+  }
+  if (Number.isNaN(d.getTime())) return s.length > 16 ? s.slice(0, 16) : s
+  const h = pad2(d.getHours())
+  const min = pad2(d.getMinutes())
+  const day = pad2(d.getDate())
+  const mo = pad2(d.getMonth() + 1)
+  const y = d.getFullYear()
+  return `${h}:${min} ${day}-${mo}-${y}`
 }
 
 export default function ChatListScreen() {
@@ -37,6 +54,12 @@ export default function ChatListScreen() {
       setLoading(false)
     })()
   }, [loadConversations])
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadConversations()
+    }, [loadConversations]),
+  )
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -67,7 +90,8 @@ export default function ChatListScreen() {
             renderItem={({ item }) => {
               const fullName = `${item.first_name || ""} ${item.last_name || ""}`.trim() || "Khách hàng"
               const unread = Number(item.unread_count || 0)
-              const orderMeta = shipperOrderMetaFromLabel(item.label)
+              const orderMeta = shipperConversationNavMeta(item.label)
+              const preview = (item.last_message || "").trim()
               return (
                 <TouchableOpacity
                   onPress={() =>
@@ -75,6 +99,7 @@ export default function ChatListScreen() {
                       conversationId: item.conversation_id,
                       title: fullName,
                       role: "Khách hàng",
+                      customerUserId: item.customer_id,
                       ...orderMeta,
                     })
                   }
@@ -89,11 +114,16 @@ export default function ChatListScreen() {
                       />
                       <View style={styles.mainInfo}>
                         <View style={styles.rowTop}>
-                          <Text variant="titleMedium" style={styles.title}>
+                          <Text
+                            variant="titleMedium"
+                            style={styles.title}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
                             {fullName}
                           </Text>
                           <Text variant="bodySmall" style={styles.time}>
-                            {item.last_message_time || ""}
+                            {formatConversationListTime(item.last_message_time)}
                           </Text>
                         </View>
                         <View style={styles.rowBottom}>
@@ -101,7 +131,7 @@ export default function ChatListScreen() {
                             Khách hàng
                           </Chip>
                           <Text numberOfLines={1} variant="bodySmall" style={styles.lastMessage}>
-                            {item.last_message || "Chưa có tin nhắn"}
+                            {preview || "Chưa có tin nhắn"}
                           </Text>
                         </View>
                       </View>
@@ -161,7 +191,8 @@ const styles = StyleSheet.create({
   rowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: spacing.sm,
     marginBottom: spacing.xs,
   },
   rowBottom: {
@@ -170,11 +201,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   title: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     color: theme.colors.textPrimary,
     fontWeight: "600",
   },
   time: {
+    flexShrink: 0,
     color: theme.colors.textSecondary,
+    textAlign: "right",
   },
   lastMessage: {
     flex: 1,

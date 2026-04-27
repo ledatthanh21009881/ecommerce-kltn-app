@@ -133,11 +133,28 @@ export default function AppNavigator() {
           message={bannerData?.message || ''}
           orderId={bannerData?.orderId}
           onPress={() => {
-            if (bannerData?.orderId) {
-              navigation.navigate('Main', {
-                screen: 'Đơn hàng',
+            if (bannerData?.chatNavigation) {
+              const c = bannerData.chatNavigation
+              navigation.navigate("Main", {
+                screen: "Chat",
                 params: {
-                  screen: 'OrderDetail',
+                  screen: "ChatDetail",
+                  params: {
+                    conversationId: c.conversationId,
+                    title: c.title,
+                    customerUserId: c.customerUserId,
+                    shipperUserId: c.shipperUserId,
+                    orderNumericId: c.orderNumericId,
+                    orderId: c.orderId,
+                    orderLabel: c.orderLabel,
+                  },
+                },
+              })
+            } else if (bannerData?.orderId) {
+              navigation.navigate("Main", {
+                screen: "Đơn hàng",
+                params: {
+                  screen: "OrderDetail",
                   params: { orderId: bannerData.orderId },
                 },
               })

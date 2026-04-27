@@ -19,12 +19,19 @@
           "icon": "./assets/icon.png",
           "color": "#ffffff"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phep truy cap anh de gui trong chat voi khach hang."
+        }
       ]
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Ứng dụng cần truy cập vị trí để xác nhận việc lấy và giao hàng."
+        "NSLocationWhenInUseUsageDescription": "Ứng dụng cần truy cập vị trí để xác nhận việc lấy và giao hàng.",
+        "NSPhotoLibraryUsageDescription": "Cho phép chọn ảnh để gửi trong chat với khách hàng."
       }
     },
     "android": {
@@ -37,8 +44,8 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
       ],
       "package": "com.thanhle02032003.mobileappdeliverynew"
     },

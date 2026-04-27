@@ -1,14 +1,93 @@
 "use client"
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { View, StyleSheet, FlatList, Animated } from "react-native"
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  Animated,
+  Image,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+} from "react-native"
+import * as ImagePicker from "expo-image-picker"
 import { Text, TextInput, IconButton, Card, ActivityIndicator } from "react-native-paper"
-import { useNavigation, useRoute } from "@react-navigation/native"
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import HeaderBar from "../../components/HeaderBar"
 import { theme, spacing, borderRadius } from "../../styles/theme"
-import { chatService, MessageItem } from "../services/chatService"
+import { chatService, MessageItem, type MessageMediaPayload } from "../services/chatService"
 import { getMessengerWebSocketUrl } from "../services/messengerSocket"
+
+type PendingImageDraft = {
+  id: string
+  uri: string
+  mime: string
+  fname: string
+  webFile?: File | null
+}
+
+function mapPickerAssetToDraft(
+  asset: {
+    uri: string
+    mimeType?: string | null
+    fileName?: string | null
+    file?: File | null
+  },
+  index: number,
+): PendingImageDraft {
+  let mime = (asset.mimeType || "image/jpeg").toLowerCase()
+  if (mime === "image" || !mime.includes("/")) mime = "image/jpeg"
+  if (mime === "image/jpg") mime = "image/jpeg"
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : mime.includes("gif") ? "gif" : "jpg"
+  const fname = asset.fileName?.trim() || `chat-${Date.now()}-${index}.${ext}`
+  return {
+    id: `p-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+    uri: asset.uri,
+    mime,
+    fname,
+    webFile: asset.file ?? null,
+  }
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0")
+}
+
+/** Giờ:phút trước, ngày/tháng/năm sau — ví dụ `21:06 27/04/2026` */
+function formatSentAt(raw: string | undefined): string {
+  if (!raw?.trim()) return ""
+  const s = raw.trim()
+  let d: Date
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) {
+    d = new Date(s.replace(" ", "T"))
+  } else {
+    d = new Date(s)
+  }
+  if (Number.isNaN(d.getTime())) return s
+  const h = pad2(d.getHours())
+  const min = pad2(d.getMinutes())
+  const day = pad2(d.getDate())
+  const mo = pad2(d.getMonth() + 1)
+  const y = d.getFullYear()
+  return `${h}:${min} ${day}/${mo}/${y}`
+}
+
+function localSqlDateTime(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+/** Web/backend đôi khi lưu caption giả dạng [Image] / [Ảnh] — không hiển thị trong bubble khi đã có media. */
+function isMediaPlaceholderCaption(text: string | undefined): boolean {
+  const t = (text || "").trim()
+  if (!t) return false
+  return /^\[(Image|Ảnh|Video)\]$/i.test(t)
+}
 
 function TypingDotsBubble() {
   const opacities = useRef([
@@ -43,11 +122,12 @@ function TypingDotsBubble() {
 }
 
 export default function ChatDetailScreen() {
+  const insets = useSafeAreaInsets()
+  const { width: winW, height: winH } = useWindowDimensions()
   const navigation = useNavigation<any>()
   const route = useRoute<any>()
   const {
     title = "Cuoc tro chuyen",
-    role = "Khách hàng",
     orderId,
     orderLabel,
     conversationId,
@@ -63,7 +143,8 @@ export default function ChatDetailScreen() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
   const [peerTyping, setPeerTyping] = useState(false)
-  const [wsConnected, setWsConnected] = useState(false)
+  const [pendingImages, setPendingImages] = useState<PendingImageDraft[]>([])
+  const [imageZoomUri, setImageZoomUri] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -72,7 +153,10 @@ export default function ChatDetailScreen() {
   const typingSentRef = useRef(false)
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const canSend = useMemo(() => input.trim().length > 0, [input])
+  const canSend = useMemo(
+    () => input.trim().length > 0 || pendingImages.length > 0,
+    [input, pendingImages.length],
+  )
 
   useEffect(() => {
     convRef.current = activeConversationId
@@ -166,6 +250,7 @@ export default function ChatDetailScreen() {
       setActiveConversationId(conv)
       if (conv) {
         await loadMessagesFor(conv)
+        await chatService.markConversationRead(conv)
       } else {
         setMessages([])
       }
@@ -176,9 +261,17 @@ export default function ChatDetailScreen() {
     }
   }, [customerUserId, shipperUserId, orderNumericId, conversationId, loadMessagesFor])
 
+  useFocusEffect(
+    useCallback(() => {
+      const cid = activeConversationId
+      if (cid && cid > 0) {
+        void chatService.markConversationRead(cid)
+      }
+    }, [activeConversationId]),
+  )
+
   useEffect(() => {
     if (activeConversationId == null || activeConversationId <= 0) {
-      setWsConnected(false)
       return
     }
 
@@ -215,7 +308,6 @@ export default function ChatDetailScreen() {
           }
           return
         }
-        setWsConnected(true)
         ws.send(JSON.stringify({ type: "auth", token }))
         const cid = convRef.current
         if (cid && cid > 0) {
@@ -245,6 +337,7 @@ export default function ChatDetailScreen() {
                 if (prev.some((m) => Number(m.message_id) === mid)) return prev
                 return [...prev, raw as MessageItem]
               })
+              void chatService.markConversationRead(myConv)
               break
             }
             case "typing_indicator": {
@@ -275,15 +368,12 @@ export default function ChatDetailScreen() {
         }
       }
 
-      ws.onerror = () => {
-        setWsConnected(false)
-      }
+      ws.onerror = () => {}
 
       ws.onclose = () => {
         if (wsRef.current === ws) {
           wsRef.current = null
         }
-        setWsConnected(false)
         if (cancelled) return
         clearReconnect()
         reconnectRef.current = setTimeout(() => {
@@ -321,7 +411,6 @@ export default function ChatDetailScreen() {
           // ignore
         }
       }
-      setWsConnected(false)
     }
   }, [activeConversationId, bumpPeerTypingFromEvent, clearPeerTypingFromEvent, flushLocalTyping])
 
@@ -348,42 +437,128 @@ export default function ChatDetailScreen() {
     }
   }
 
+  const appendMessageIfNew = useCallback((saved: MessageItem) => {
+    setMessages((prev) => {
+      const mid = Number(saved.message_id)
+      if (prev.some((m) => Number(m.message_id) === mid)) return prev
+      return [...prev, saved]
+    })
+  }, [])
+
+  const relaySavedMessageToPeers = useCallback((saved: MessageItem, convId: number) => {
+    const ws = wsRef.current
+    if (ws?.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(JSON.stringify({ type: "new_message", conversation_id: convId, message: saved }))
+    } catch {
+      // ignore
+    }
+  }, [])
+
   const handleSend = async () => {
     if (!canSend || sending || activeConversationId == null) return
     flushLocalTyping()
+
+    const caption = input.trim()
+    const convId = activeConversationId
+    const uid = currentUserId ?? 0
+
+    if (pendingImages.length > 0) {
+      const drafts = [...pendingImages]
+      const tempId = -Date.now()
+      const optimistic: MessageItem = {
+        message_id: tempId,
+        conversation_id: convId,
+        sender_id: uid,
+        content: caption,
+        sent_at: localSqlDateTime(),
+        is_read: 0,
+        media: drafts.map((d) => ({ url: d.uri, type: d.mime })),
+      }
+      setPendingImages([])
+      setInput("")
+      setMessages((prev) => [...prev, optimistic])
+
+      setSending(true)
+      try {
+        const uploadedPayloads: MessageMediaPayload[] = []
+        for (let i = 0; i < drafts.length; i++) {
+          const d = drafts[i]
+          const uploaded = await chatService.uploadMessageMedia(d.uri, d.mime, d.fname, d.webFile ?? null)
+          if (!uploaded) {
+            setMessages((prev) => prev.filter((m) => Number(m.message_id) !== tempId))
+            Alert.alert("Lỗi", "Không upload được ảnh. Kiểm tra mạng và Cloudinary trên server.")
+            return
+          }
+          uploadedPayloads.push({
+            url: uploaded.url,
+            type: uploaded.type,
+            name: uploaded.name ?? d.fname,
+            public_id: uploaded.public_id ?? undefined,
+            size: uploaded.size,
+          })
+        }
+        const saved = await chatService.sendMessage(convId, caption, uploadedPayloads)
+        if (!saved) {
+          setMessages((prev) => prev.filter((m) => Number(m.message_id) !== tempId))
+          Alert.alert("Lỗi", "Không gửi được tin kèm ảnh.")
+          return
+        }
+        setMessages((prev) => prev.map((m) => (Number(m.message_id) === tempId ? saved : m)))
+        relaySavedMessageToPeers(saved, convId)
+      } catch (error) {
+        console.error("[ChatDetailScreen] Failed to send image:", error)
+        setMessages((prev) => prev.filter((m) => Number(m.message_id) !== tempId))
+        Alert.alert("Lỗi", "Không gửi được ảnh.")
+      } finally {
+        setSending(false)
+      }
+      return
+    }
+
     setSending(true)
     try {
-      const text = input.trim()
-      const saved = await chatService.sendMessage(activeConversationId, text)
+      const saved = await chatService.sendMessage(convId, caption)
       if (saved) {
-        setMessages((prev) => {
-          const mid = Number(saved.message_id)
-          if (prev.some((m) => Number(m.message_id) === mid)) return prev
-          return [...prev, saved]
-        })
+        appendMessageIfNew(saved)
         setInput("")
-        // Relay giống web — Ratchet gửi tới client khác (khách) trong phòng; không gửi lại sender.
-        const ws = wsRef.current
-        const cid = activeConversationId
-        if (ws?.readyState === WebSocket.OPEN && cid != null) {
-          try {
-            ws.send(
-              JSON.stringify({
-                type: "new_message",
-                conversation_id: cid,
-                message: saved,
-              }),
-            )
-          } catch {
-            // ignore
-          }
-        }
+        relaySavedMessageToPeers(saved, convId)
       }
     } catch (error) {
       console.error("[ChatDetailScreen] Failed to send message:", error)
     } finally {
       setSending(false)
     }
+  }
+
+  const handlePickImage = async () => {
+    if (!activeConversationId || sending) return
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== "granted") {
+      Alert.alert("Quyền truy cập", "Ứng dụng cần quyền thư viện ảnh để chọn hình.")
+      return
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+      allowsMultipleSelection: true,
+      selectionLimit: 12,
+    })
+    if (result.canceled || !result.assets?.length) return
+
+    const newDrafts = result.assets.map((asset, i) => mapPickerAssetToDraft(asset, i))
+    setPendingImages((prev) => {
+      const seen = new Set(prev.map((p) => p.uri))
+      const merged = [...prev]
+      for (const d of newDrafts) {
+        if (!seen.has(d.uri)) {
+          seen.add(d.uri)
+          merged.push(d)
+        }
+      }
+      return merged
+    })
   }
 
   const openOrderDetail = () => {
@@ -404,15 +579,10 @@ export default function ChatDetailScreen() {
       <View style={styles.metaBar}>
         <Card style={styles.metaCard}>
           <Card.Content style={styles.metaContent}>
-            <Text variant="bodySmall" style={styles.metaText}>
-              {`Dang chat voi: ${role}${
-                activeConversationId ? (wsConnected ? " · Realtime" : " · Dang ket noi...") : ""
-              }`}
-            </Text>
             {orderId ? (
               <View style={styles.orderLinkRow}>
                 <Text variant="bodySmall" style={styles.orderText}>
-                  Lien quan don: {orderLabel || `#${orderId}`}
+                  Đơn hàng: {orderLabel || `#${orderId}`}
                 </Text>
                 <IconButton
                   icon="open-in-new"
@@ -450,11 +620,33 @@ export default function ChatDetailScreen() {
           }
           renderItem={({ item }) => {
             const isMine = currentUserId != null ? Number(item.sender_id) === Number(currentUserId) : false
+            const mediaUrls = (item.media ?? []).map((m) => m.url).filter((u): u is string => Boolean(u))
+            const trimmedContent = item.content?.trim() ?? ""
+            const hasText = Boolean(trimmedContent) && !isMediaPlaceholderCaption(trimmedContent)
+            const multiImg = mediaUrls.length > 1
             return (
               <View style={[styles.messageRow, isMine ? styles.meRow : styles.otherRow]}>
                 <View style={[styles.bubble, isMine ? styles.meBubble : styles.otherBubble]}>
-                  <Text style={isMine ? styles.meText : styles.otherText}>{item.content || "(media)"}</Text>
-                  <Text style={styles.timeText}>{item.sent_at}</Text>
+                  {mediaUrls.length > 0 ? (
+                    <View style={styles.messageImagesRow}>
+                      {mediaUrls.map((url, idx) => (
+                        <Pressable key={`${item.message_id}-${idx}`} onPress={() => setImageZoomUri(url)}>
+                          <Image
+                            source={{ uri: url }}
+                            style={multiImg ? styles.messageImageMulti : styles.messageImage}
+                            resizeMode="cover"
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                  {hasText ? (
+                    <Text style={isMine ? styles.meText : styles.otherText}>{trimmedContent}</Text>
+                  ) : null}
+                  {!hasText && mediaUrls.length === 0 ? (
+                    <Text style={isMine ? styles.meText : styles.otherText}>(media)</Text>
+                  ) : null}
+                  <Text style={[styles.timeText, isMine ? styles.timeTextMine : null]}>{formatSentAt(item.sent_at)}</Text>
                 </View>
               </View>
             )
@@ -462,24 +654,89 @@ export default function ChatDetailScreen() {
         />
       )}
 
-      <View style={styles.inputWrap}>
-        <TextInput
-          mode="outlined"
-          placeholder="Nhap tin nhan..."
-          value={input}
-          onChangeText={handleInputChange}
-          onBlur={flushLocalTyping}
-          style={styles.input}
-        />
-        <IconButton
-          icon="send"
-          mode="contained"
-          containerColor={canSend && !sending && activeConversationId ? theme.colors.primary : "#d9d9d9"}
-          iconColor="white"
-          onPress={handleSend}
-          disabled={!canSend || sending || !activeConversationId}
-        />
+      <View style={styles.inputOuter}>
+        {pendingImages.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.pendingScroll}
+            contentContainerStyle={styles.pendingScrollContent}
+          >
+            {pendingImages.map((p) => (
+              <View key={p.id} style={styles.pendingThumbWrap}>
+                <Image source={{ uri: p.uri }} style={styles.pendingThumb} resizeMode="cover" />
+                <IconButton
+                  icon="close-circle"
+                  size={20}
+                  style={styles.pendingRemoveBtn}
+                  onPress={() => setPendingImages((prev) => prev.filter((x) => x.id !== p.id))}
+                  accessibilityLabel="Bo anh"
+                />
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
+        <View style={styles.inputRow}>
+          <IconButton
+            icon="image-outline"
+            size={22}
+            mode="contained-tonal"
+            disabled={!activeConversationId || sending}
+            onPress={handlePickImage}
+            accessibilityLabel="Chon anh"
+          />
+          <TextInput
+            mode="outlined"
+            placeholder={
+              pendingImages.length > 0 ? "Thêm chú thích (tùy chọn)..." : "Nhập tin nhắn..."
+            }
+            value={input}
+            onChangeText={handleInputChange}
+            onBlur={flushLocalTyping}
+            style={styles.input}
+          />
+          <IconButton
+            icon="send"
+            mode="contained"
+            containerColor={canSend && !sending && activeConversationId ? theme.colors.primary : "#d9d9d9"}
+            iconColor="white"
+            onPress={handleSend}
+            disabled={!canSend || sending || !activeConversationId}
+          />
+        </View>
       </View>
+
+      <Modal
+        visible={imageZoomUri != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageZoomUri(null)}
+      >
+        <View style={[styles.zoomRoot, { flex: 1 }]}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setImageZoomUri(null)} />
+          <View
+            style={[StyleSheet.absoluteFillObject, { justifyContent: "center", alignItems: "center" }]}
+            pointerEvents="box-none"
+          >
+            {imageZoomUri ? (
+              <Image
+                source={{ uri: imageZoomUri }}
+                style={{ width: winW * 0.92, height: winH * 0.78 }}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+          <IconButton
+            icon="close"
+            iconColor="white"
+            size={28}
+            containerColor="rgba(0,0,0,0.45)"
+            style={[styles.zoomCloseBtn, { top: Math.max(insets.top, 12) + 8, right: 12 }]}
+            onPress={() => setImageZoomUri(null)}
+            accessibilityLabel="Đóng ảnh"
+          />
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -500,15 +757,11 @@ const styles = StyleSheet.create({
   metaContent: {
     paddingVertical: spacing.xs,
   },
-  metaText: {
-    color: theme.colors.textSecondary,
-  },
   typingBubble: {
     alignSelf: "flex-start",
     maxWidth: "80%",
     backgroundColor: theme.colors.surfaceVariant,
     borderRadius: borderRadius.md,
-    borderTopLeftRadius: 4,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     marginBottom: spacing.xs,
@@ -570,11 +823,9 @@ const styles = StyleSheet.create({
   },
   meBubble: {
     backgroundColor: theme.colors.primary,
-    borderTopRightRadius: 4,
   },
   otherBubble: {
     backgroundColor: theme.colors.surfaceVariant,
-    borderTopLeftRadius: 4,
   },
   meText: {
     color: "white",
@@ -588,16 +839,72 @@ const styles = StyleSheet.create({
     color: theme.colors.textTertiary,
     textAlign: "right",
   },
-  inputWrap: {
+  timeTextMine: {
+    color: "rgba(255,255,255,0.88)",
+  },
+  messageImagesRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.md,
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 4,
+  },
+  messageImage: {
+    width: 220,
+    height: 160,
+    borderRadius: borderRadius.sm,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  messageImageMulti: {
+    width: 104,
+    height: 104,
+    borderRadius: borderRadius.sm,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  zoomRoot: {
+    backgroundColor: "rgba(0,0,0,0.9)",
+  },
+  zoomCloseBtn: {
+    position: "absolute",
+    zIndex: 10,
+    margin: 0,
+  },
+  inputOuter: {
     borderTopWidth: 1,
     borderTopColor: theme.colors.borderLight,
     backgroundColor: theme.colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  pendingScroll: {
+    maxHeight: 72,
+    marginBottom: spacing.xs,
+  },
+  pendingScrollContent: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  pendingThumbWrap: {
+    position: "relative",
+    marginRight: spacing.xs,
+  },
+  pendingThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.sm,
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  pendingRemoveBtn: {
+    position: "absolute",
+    top: -10,
+    right: -10,
+    margin: 0,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingTop: spacing.xs,
   },
   input: {
     flex: 1,

@@ -88,6 +88,9 @@ export interface Notification {
   message: string
   payload?: {
     order_id?: number
+    conversation_id?: number
+    customer_user_id?: number
+    customer_name?: string
     type?: string
     [key: string]: any
   }

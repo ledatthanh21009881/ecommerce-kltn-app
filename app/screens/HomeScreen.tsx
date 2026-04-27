@@ -15,7 +15,8 @@ import StatsCard from "../../components/StatsCard"
 import QuickAction from "../../components/QuickAction"
 import EmptyState from "../../components/EmptyState"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
-import { LinearGradient } from 'expo-linear-gradient'
+import { LinearGradient } from "expo-linear-gradient"
+import { chatService, shipperConversationNavMeta } from "../services/chatService"
 
 const { width } = Dimensions.get('window')
 
@@ -29,6 +30,7 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0)
   const lastCheckedNotificationId = React.useRef<number | null>(null)
   const previousUnreadCount = React.useRef<number>(0)
+  const lastChatUnreadSum = React.useRef<number | null>(null)
 
   const checkAndShowNewNotification = useCallback(async () => {
     try {
@@ -61,6 +63,43 @@ export default function HomeScreen() {
     }
   }, [showBanner])
 
+  const checkNewChatMessages = useCallback(async () => {
+    try {
+      const data = await chatService.getConversations(undefined, { myShipperConversations: true })
+      const sumUnread = data.reduce((s, c) => s + Number(c.unread_count || 0), 0)
+      if (lastChatUnreadSum.current === null) {
+        lastChatUnreadSum.current = sumUnread
+        return
+      }
+      if (sumUnread > lastChatUnreadSum.current) {
+        const withUnread = data.filter((c) => Number(c.unread_count) > 0)
+        const latest = [...withUnread].sort((a, b) => {
+          const ta = new Date(a.last_message_time || 0).getTime()
+          const tb = new Date(b.last_message_time || 0).getTime()
+          return tb - ta
+        })[0]
+        if (latest) {
+          const fullName = `${latest.first_name || ""} ${latest.last_name || ""}`.trim() || "Khách hàng"
+          const preview = (latest.last_message || "").trim() || "Tin nhắn mới"
+          const meta = shipperConversationNavMeta(latest.label)
+          showBanner({
+            title: "Tin nhắn mới",
+            message: `${fullName}: ${preview.slice(0, 100)}`,
+            chatNavigation: {
+              conversationId: latest.conversation_id,
+              title: fullName,
+              customerUserId: latest.customer_id,
+              ...meta,
+            },
+          })
+        }
+      }
+      lastChatUnreadSum.current = sumUnread
+    } catch (e) {
+      console.error("[HomeScreen] checkNewChatMessages:", e)
+    }
+  }, [showBanner])
+
   const loadUnreadCount = useCallback(async () => {
     try {
       const count = await notificationService.getUnreadCount()
@@ -84,23 +123,26 @@ export default function HomeScreen() {
       loadUnreadCount()
       // Also check for new notifications when screen focuses
       checkAndShowNewNotification()
+      void checkNewChatMessages()
       // Tạm thời tắt animation để test
       // Animated.timing(fadeAnim, {
       //   toValue: 1,
       //   duration: 800,
       //   useNativeDriver: true,
       // }).start()
-    }, [refreshOrders, loadUnreadCount, checkAndShowNewNotification]),
+    }, [refreshOrders, loadUnreadCount, checkAndShowNewNotification, checkNewChatMessages]),
   )
 
-  // Poll for new notifications every 10 seconds when screen is focused
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadUnreadCount()
-    }, 10000) // Check every 10 seconds
-
-    return () => clearInterval(interval)
-  }, [loadUnreadCount])
+  // Poll for new notifications + chat unread every 10 seconds when Home is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const interval = setInterval(() => {
+        void loadUnreadCount()
+        void checkNewChatMessages()
+      }, 10000)
+      return () => clearInterval(interval)
+    }, [loadUnreadCount, checkNewChatMessages]),
+  )
 
   const onRefresh = async () => {
     setRefreshing(true)

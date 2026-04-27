@@ -1,6 +1,9 @@
 "use client"
 
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { Platform } from "react-native"
 import { apiClient } from "./apiClient"
+import { authService } from "./authService"
 
 export interface ConversationItem {
   conversation_id: number
@@ -24,7 +27,25 @@ export interface MessageItem {
   is_read: number
   first_name?: string
   last_name?: string
-  media?: Array<{ url?: string; type?: string }>
+  media?: Array<{ url?: string; type?: string; file_name?: string }>
+}
+
+export type MessageMediaPayload = {
+  url: string
+  type: string
+  name?: string
+  public_id?: string | null
+  size?: number
+}
+
+export type UploadedMessageMedia = {
+  url: string
+  type: string
+  name?: string
+  public_id?: string | null
+  size?: number
+  file_name?: string
+  file_size?: number
 }
 
 type ApiListResponse<T> = {
@@ -45,6 +66,24 @@ export type ConversationQueryFilters = {
   label?: string
   /** Shipper app: only conversations with label shipper:{me}:order:* */
   myShipperConversations?: boolean
+}
+
+/** Parse `shipper:{id}:order:{id}` — dùng khi điều hướng ChatDetail từ list/banner. */
+export function shipperConversationNavMeta(label?: string): {
+  shipperUserId?: number
+  orderNumericId?: number
+  orderId?: string
+  orderLabel?: string
+} {
+  const m = (label || "").match(/^shipper:(\d+):order:(\d+)$/)
+  if (!m?.[1] || !m?.[2]) return {}
+  const orderNumericId = Number(m[2])
+  return {
+    shipperUserId: Number(m[1]),
+    orderNumericId: Number.isFinite(orderNumericId) ? orderNumericId : undefined,
+    orderId: m[2],
+    orderLabel: `#${m[2]}`,
+  }
 }
 
 class ChatService {
@@ -112,11 +151,98 @@ class ChatService {
     return Array.isArray(res.data?.items) ? res.data.items : []
   }
 
-  async sendMessage(conversationId: number, content: string): Promise<MessageItem | null> {
-    const res = await apiClient.post<ApiDataResponse<MessageItem>>("/api/backend/v1/messages", {
+  /** Đánh dấu tin từ khách đã đọc (shipper) — PUT backend mark-read. */
+  async markConversationRead(conversationId: number): Promise<boolean> {
+    try {
+      const res = await apiClient.put<{ success?: boolean }>(
+        `/api/backend/v1/conversations/${conversationId}/mark-read`,
+        {},
+      )
+      return Boolean(res?.success)
+    } catch (e) {
+      console.warn("[ChatService] markConversationRead failed", e)
+      return false
+    }
+  }
+
+  /**
+   * Upload ảnh (multipart, field `media`) — cùng endpoint backend với web.
+   * Trên web: truyền `webPickedFile` = `asset.file` từ expo-image-picker (RN Web không gửi được {uri}).
+   */
+  async uploadMessageMedia(
+    localUri: string,
+    mimeType: string,
+    filename: string,
+    webPickedFile?: File | null,
+  ): Promise<UploadedMessageMedia | null> {
+    const base = await authService.getApiBaseUrl()
+    const token = await AsyncStorage.getItem("authToken")
+    if (!token) return null
+
+    let mt = (mimeType || "image/jpeg").toLowerCase()
+    if (mt === "image" || !mt.includes("/")) mt = "image/jpeg"
+    if (mt === "image/jpg") mt = "image/jpeg"
+
+    const safeName = filename?.trim() || "photo.jpg"
+    const form = new FormData()
+
+    if (Platform.OS === "web") {
+      if (webPickedFile && typeof File !== "undefined" && webPickedFile instanceof File) {
+        form.append("media", webPickedFile, webPickedFile.name || safeName)
+      } else {
+        const blobResp = await fetch(localUri)
+        const blob = await blobResp.blob()
+        form.append("media", blob, safeName)
+      }
+    } else {
+      form.append("media", { uri: localUri, type: mt, name: safeName } as any)
+    }
+
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/backend/v1/messages/upload-media`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      body: form,
+    })
+
+    const json = (await res.json().catch(() => ({}))) as ApiDataResponse<UploadedMessageMedia> & {
+      data?: UploadedMessageMedia
+    }
+    if (!res.ok || !json?.success || !json.data?.url) {
+      console.error("[ChatService] uploadMessageMedia failed", res.status, json)
+      return null
+    }
+    const d = json.data as UploadedMessageMedia
+    return {
+      url: d.url,
+      type: d.type || mt,
+      name: d.file_name ?? d.name ?? safeName,
+      public_id: d.public_id ?? null,
+      size: d.file_size ?? d.size,
+    }
+  }
+
+  async sendMessage(
+    conversationId: number,
+    content: string,
+    media?: MessageMediaPayload[],
+  ): Promise<MessageItem | null> {
+    const body: Record<string, unknown> = {
       conversation_id: conversationId,
       content,
-    })
+    }
+    if (media?.length) {
+      body.media = media.map((m) => ({
+        url: m.url,
+        type: m.type,
+        name: m.name ?? "image.jpg",
+        public_id: m.public_id ?? null,
+        size: m.size ?? 0,
+      }))
+    }
+    const res = await apiClient.post<ApiDataResponse<MessageItem>>("/api/backend/v1/messages", body)
     if (!res?.success || !res.data) return null
     return res.data
   }

@@ -2,11 +2,23 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 
-interface NotificationBannerData {
+/** Tham số điều hướng tới màn ChatDetail (tab Chat). */
+export type ChatBannerNavigationParams = {
+  conversationId: number
+  title: string
+  customerUserId?: number
+  shipperUserId?: number
+  orderNumericId?: number
+  orderId?: string
+  orderLabel?: string
+}
+
+export interface NotificationBannerData {
   title: string
   message: string
   orderId?: number
   notificationId?: number
+  chatNavigation?: ChatBannerNavigationParams
 }
 
 interface NotificationBannerContextType {
