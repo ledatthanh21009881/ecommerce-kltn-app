@@ -2,14 +2,26 @@ import * as Notifications from 'expo-notifications'
 import Constants from 'expo-constants'
 import { apiClient } from './apiClient'
 import { Notification } from '../../lib/types'
+import {
+  getCachedSoundMessages,
+  getCachedSoundOrders,
+  isChatPushPayload,
+} from './notificationSoundSettings'
 
-// Configure notification behavior
+// Configure notification behavior (chuông theo cài đặt đơn hàng / tin nhắn)
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    const raw = notification.request?.content?.data as Record<string, unknown> | undefined
+    const isChat = isChatPushPayload(raw)
+    const shouldPlaySound = isChat ? getCachedSoundMessages() : getCachedSoundOrders()
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }
+  },
 })
 
 class NotificationService {

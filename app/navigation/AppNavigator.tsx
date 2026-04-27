@@ -22,6 +22,7 @@ import ShippingGuideScreen from "../screens/ShippingGuideScreen"
 import ChatListScreen from "../screens/ChatListScreen"
 import ChatDetailScreen from "../screens/ChatDetailScreen"
 import DeliveryHistoryScreen from "../screens/DeliveryHistoryScreen"
+import NotificationSettingsScreen from "../screens/NotificationSettingsScreen"
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -114,6 +115,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="ShippingGuide" component={ShippingGuideScreen} />
             <Stack.Screen name="DeliveryHistory" component={DeliveryHistoryScreen} />
+            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
           </>
         ) : (
           <>

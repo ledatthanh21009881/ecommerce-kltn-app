@@ -151,7 +151,7 @@ export default function ProfileScreen() {
           <Card.Content style={styles.settingsContent}>
             <TouchableOpacity
               style={styles.settingItem}
-              onPress={() => Alert.alert("Thông báo", "Tính năng đang phát triển")}
+              onPress={() => navigation.navigate("NotificationSettings" as never)}
               activeOpacity={0.7}
             >
               <View style={styles.settingItemLeft}>
