@@ -19,6 +19,8 @@ import ProfileScreen from "../screens/ProfileScreen"
 import LoadingScreen from "../screens/LoadingScreen"
 import NotificationScreen from "../screens/NotificationScreen"
 import ShippingGuideScreen from "../screens/ShippingGuideScreen"
+import ChatListScreen from "../screens/ChatListScreen"
+import ChatDetailScreen from "../screens/ChatDetailScreen"
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -29,6 +31,7 @@ function OrderStack() {
       <Stack.Screen name="OrderList" component={OrderListScreen} />
       <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
       <Stack.Screen name="Camera" component={CameraScreen} />
+      <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
     </Stack.Navigator>
   )
 }
@@ -40,6 +43,16 @@ function HomeStack() {
       <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
       <Stack.Screen name="Camera" component={CameraScreen} />
       <Stack.Screen name="Notification" component={NotificationScreen} />
+      <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
+    </Stack.Navigator>
+  )
+}
+
+function ChatStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ChatList" component={ChatListScreen} />
+      <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
     </Stack.Navigator>
   )
 }
@@ -64,6 +77,9 @@ function MainTabs() {
             case "Tài khoản":
               iconName = focused ? "account" : "account-outline"
               break
+            case "Chat":
+              iconName = focused ? "message-text" : "message-text-outline"
+              break
             default:
               iconName = "circle"
           }
@@ -78,6 +94,7 @@ function MainTabs() {
       <Tab.Screen name="Đơn hàng" component={HomeStack} />
       <Tab.Screen name="Đang làm" children={() => <OrderStack />} initialParams={{ filter: "delivering" }} />
       <Tab.Screen name="Đã giao" children={() => <OrderStack />} initialParams={{ filter: "completed" }} />
+      <Tab.Screen name="Chat" component={ChatStack} />
       <Tab.Screen name="Tài khoản" component={ProfileScreen} />
     </Tab.Navigator>
   )

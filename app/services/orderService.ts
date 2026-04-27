@@ -90,8 +90,15 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
     ? shippingProofsRaw
     : parseJSONValue(shippingProofsRaw) ?? []
 
+  const rawCustomerId = backendOrder.customer_id ?? backendOrder.customer_user_id ?? backendOrder.user_id
+  const customerUserId =
+    rawCustomerId != null && rawCustomerId !== "" && Number.isFinite(Number(rawCustomerId))
+      ? Number(rawCustomerId)
+      : undefined
+
   return {
     id: backendOrder.order_id?.toString() || backendOrder.id?.toString() || "",
+    customerUserId,
     customerName: `${backendOrder.first_name || ""} ${backendOrder.last_name || ""}`.trim() || "Khách hàng",
     address: address || backendOrder.address || "",
     phone: backendOrder.phone || "",

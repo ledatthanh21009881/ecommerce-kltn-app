@@ -46,6 +46,12 @@ class AuthService {
       return this.currentApiBaseUrl
     }
 
+    // In web dev, always use local backend to avoid stale saved server IP.
+    if (__DEV__ && Platform.OS === 'web') {
+      this.currentApiBaseUrl = "http://localhost:8000"
+      return this.currentApiBaseUrl
+    }
+
     // 0) Prefer explicit env override if provided at build time (Expo public env)
     const envApi = (process.env as any)?.EXPO_PUBLIC_API_URL
     if (envApi && typeof envApi === 'string' && envApi.trim().length > 0) {
@@ -285,7 +291,7 @@ class AuthService {
         error.message.includes("NetworkError")
       )
       
-      if (isNetworkError && !retryWithDetection) {
+      if (isNetworkError && !retryWithDetection && !(__DEV__ && Platform.OS === 'web')) {
         console.log("[AuthService] Network error detected, attempting to auto-detect server IP...")
         try {
           // Try to detect server IP automatically

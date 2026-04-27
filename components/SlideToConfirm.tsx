@@ -29,6 +29,7 @@ export default function SlideToConfirm({
 }: SlideToConfirmProps) {
   const translateX = useRef(new Animated.Value(0)).current
   const containerWidthValue = useRef(new Animated.Value(1)).current
+  const thumbSizeValue = useRef(new Animated.Value(THUMB_SIZE)).current
   const [containerWidth, setContainerWidth] = useState(0)
   const [isSliding, setIsSliding] = useState(false)
 
@@ -84,8 +85,9 @@ export default function SlideToConfirm({
   )
 
   const handleLayout = (event: LayoutChangeEvent) => {
-    setContainerWidth(event.nativeEvent.layout.width)
-    containerWidthValue.setValue(event.nativeEvent.layout.width)
+    const safeWidth = Math.max(event.nativeEvent.layout.width, 1)
+    setContainerWidth(safeWidth)
+    containerWidthValue.setValue(safeWidth)
   }
 
   return (
@@ -98,7 +100,7 @@ export default function SlideToConfirm({
             transform: [
               {
                 scaleX: Animated.divide(
-                  Animated.add(translateX, new Animated.Value(THUMB_SIZE)),
+                  Animated.add(translateX, thumbSizeValue),
                   containerWidthValue,
                 ),
               },

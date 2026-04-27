@@ -4,14 +4,19 @@ import { useState } from "react"
 import { View, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native"
 import { Text, TextInput, Button, Card, IconButton } from "react-native-paper"
 import { useNavigation } from "@react-navigation/native"
+import type { StackNavigationProp } from "@react-navigation/stack"
 import { authService } from "../services/authService"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
 import { LinearGradient } from 'expo-linear-gradient'
 
 export default function ForgotPasswordScreen() {
+  type AuthStackParamList = {
+    VerifyOTPScreen: { email: string }
+  }
+
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
-  const navigation = useNavigation()
+  const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>()
 
   const handleSubmit = async () => {
     if (!email) {
@@ -29,6 +34,12 @@ export default function ForgotPasswordScreen() {
     setLoading(true)
     try {
       await authService.forgotPassword(email)
+      let navigated = false
+      const goToVerifyScreen = () => {
+        if (navigated) return
+        navigated = true
+        navigation.navigate("VerifyOTPScreen", { email })
+      }
       Alert.alert(
         "Thành công",
         "Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư.",
@@ -37,11 +48,15 @@ export default function ForgotPasswordScreen() {
             text: "OK",
             onPress: () => {
               // Navigate to VerifyOTPScreen with email
-              navigation.navigate("VerifyOTPScreen" as never, { email } as never)
+              goToVerifyScreen()
             },
           },
         ]
       )
+      // RN Web can miss Alert button callbacks; keep mobile behavior and add web fallback.
+      if (Platform.OS === "web") {
+        setTimeout(goToVerifyScreen, 400)
+      }
     } catch (error: any) {
       const errorMessage = error?.message || "Không thể gửi mã OTP. Vui lòng thử lại sau."
       Alert.alert("Lỗi", errorMessage)
@@ -98,7 +113,7 @@ export default function ForgotPasswordScreen() {
                   autoCapitalize="none"
                   autoComplete="email"
                   style={styles.input}
-                  left={<TextInput.Icon icon="email" iconColor={theme.colors.primary} />}
+                  left={<TextInput.Icon icon="email" color={theme.colors.primary} />}
                   outlineColor={theme.colors.border}
                   activeOutlineColor={theme.colors.primary}
                 />

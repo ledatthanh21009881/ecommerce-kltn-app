@@ -35,6 +35,8 @@ export interface ShippingProof {
 
 export interface Order {
   id: string
+  /** users.user_id of the buyer; required for shipper–customer messenger thread */
+  customerUserId?: number
   customerName: string
   address: string
   phone: string

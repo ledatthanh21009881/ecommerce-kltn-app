@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { View, StyleSheet, Alert, Image } from "react-native"
+import { View, StyleSheet, Alert, Image, Platform } from "react-native"
 import { Text, Button, IconButton } from "react-native-paper"
 import { Camera, CameraView } from "expo-camera"
 import { useNavigation, useRoute } from "@react-navigation/native"
@@ -62,31 +62,39 @@ export default function CameraScreen() {
       return
     }
 
+    const showSuccessAndGoBack = (title: string, message: string) => {
+      // Web đôi khi không chạy ổn định callback onPress của Alert.
+      if (Platform.OS === "web") {
+        Alert.alert(title, message)
+        setTimeout(() => {
+          handleGoBack()
+        }, 120)
+        return
+      }
+      Alert.alert(title, message, [{ text: "OK", onPress: handleGoBack }])
+    }
+
     setLoading(true)
     try {
       if (action === "pickup") {
         await pickupOrder(orderId, photo)
-        Alert.alert("Thành công", "Đã xác nhận lấy hàng thành công", [{ text: "OK", onPress: handleGoBack }])
+        showSuccessAndGoBack("Thành công", "Đã xác nhận lấy hàng thành công")
       } else {
         // Giao hàng: chụp ảnh + vị trí
         await deliverOrder(orderId, photo)
-        // Thử tự động hoàn tất
-        try {
-          await completeOrder(orderId)
-          await fetchOrderById(orderId)
-          Alert.alert("Thành công", "Đã giao và hoàn tất đơn hàng", [{ text: "OK", onPress: handleGoBack }])
-        } catch (e) {
-          // Nếu server không cho hoàn tất ngay, vẫn thông báo giao thành công
-          await fetchOrderById(orderId)
-          Alert.alert(
-            "Đã giao xong",
-            "Ảnh đã gửi thành công. Hãy quay lại chi tiết đơn và vuốt để hoàn tất.",
-            [{ text: "OK", onPress: handleGoBack }],
-          )
-        }
+        await fetchOrderById(orderId)
+        // Không auto-complete ở đây để tránh kẹt luồng khi backend/web chặn request tiếp theo.
+        showSuccessAndGoBack(
+          "Đã giao xong",
+          "Ảnh đã gửi thành công. Quay lại chi tiết đơn để vuốt hoàn tất.",
+        )
       }
-    } catch (error) {
-      Alert.alert("Lỗi", "Không thể cập nhật trạng thái đơn hàng. Vui lòng thử lại.")
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : "Không thể cập nhật trạng thái đơn hàng. Vui lòng thử lại."
+      Alert.alert("Lỗi", message)
     } finally {
       setLoading(false)
     }
@@ -153,7 +161,8 @@ export default function CameraScreen() {
         title={action === "pickup" ? "Chụp ảnh lấy hàng" : "Chụp ảnh giao hàng"}
         onBack={handleGoBack}
       />
-      <CameraView style={styles.camera} facing={type} ref={cameraRef}>
+      <View style={styles.cameraWrapper}>
+        <CameraView style={styles.camera} facing={type} ref={cameraRef} />
         <View style={styles.cameraOverlay}>
           <View style={styles.topControls}>
             <IconButton icon="camera-flip" size={30} iconColor="white" onPress={toggleCameraType} />
@@ -171,7 +180,7 @@ export default function CameraScreen() {
             </View>
           </View>
         </View>
-      </CameraView>
+      </View>
     </View>
   )
 }
@@ -196,8 +205,11 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  cameraOverlay: {
+  cameraWrapper: {
     flex: 1,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "transparent",
     justifyContent: "space-between",
   },

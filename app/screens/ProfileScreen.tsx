@@ -1,4 +1,4 @@
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity } from "react-native"
+import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, Platform } from "react-native"
 import { Text, Card, Button, Avatar, Divider, List } from "react-native-paper"
 import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
@@ -22,18 +22,30 @@ export default function ProfileScreen() {
   })
 
   const handleLogout = () => {
-    Alert.alert("Đăng xuất", "Bạn có chắc chắn muốn đăng xuất?", [
+    const title = "Đăng xuất"
+    const message = "Bạn có chắc chắn muốn đăng xuất?"
+
+    const performLogout = async () => {
+      try {
+        await logout()
+      } catch {
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert("Không thể đăng xuất. Vui lòng thử lại.")
+        } else {
+          Alert.alert("Lỗi", "Không thể đăng xuất. Vui lòng thử lại.")
+        }
+      }
+    }
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const ok = window.confirm(`${title}\n\n${message}`)
+      if (ok) void performLogout()
+      return
+    }
+
+    Alert.alert(title, message, [
       { text: "Hủy", style: "cancel" },
-      {
-        text: "Đăng xuất",
-        onPress: async () => {
-          try {
-            await logout()
-          } catch (error) {
-            Alert.alert("Lỗi", "Không thể đăng xuất. Vui lòng thử lại.")
-          }
-        },
-      },
+      { text: "Đăng xuất", onPress: () => void performLogout() },
     ])
   }
 

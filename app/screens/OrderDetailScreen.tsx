@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react"
 import { View, ScrollView, StyleSheet, Alert, Linking, Platform } from "react-native"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Text, Card, Button, Divider, IconButton, Chip } from "react-native-paper"
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native"
 import { useOrderContext } from "../context/OrderContext"
@@ -111,6 +112,42 @@ export default function OrderDetailScreen() {
     Linking.openURL(url as string).catch(() => {
       Alert.alert("Lỗi", "Không thể mở bản đồ. Vui lòng thử lại sau.")
     })
+  }
+
+  const openCustomerChat = async () => {
+    if (!order) return
+    const numericOrderId = Number(order.id)
+    const customerUid = order.customerUserId
+    if (!customerUid || customerUid <= 0 || !Number.isFinite(numericOrderId) || numericOrderId <= 0) {
+      Alert.alert(
+        "Chưa có thông tin khách",
+        "Vui lòng kéo xuống để tải lại chi tiết đơn, rồi thử mở chat lại.",
+      )
+      return
+    }
+    const userRaw = await AsyncStorage.getItem("userData")
+    let shipperUid = 0
+    if (userRaw) {
+      try {
+        const parsed = JSON.parse(userRaw)
+        shipperUid = Number(parsed?.id ?? parsed?.user_id)
+      } catch {
+        // ignore
+      }
+    }
+    if (!Number.isFinite(shipperUid) || shipperUid <= 0) {
+      Alert.alert("Lỗi", "Chưa đăng nhập hoặc thiếu thông tin tài khoản shipper.")
+      return
+    }
+    navigation.navigate("ChatDetail" as never, {
+      customerUserId: customerUid,
+      shipperUserId: shipperUid,
+      orderNumericId: numericOrderId,
+      title: order.customerName || "Khách hàng",
+      role: "Khách hàng",
+      orderId: order.id,
+      orderLabel: `#${order.id}`,
+    } as never)
   }
 
   const renderActions = () => {
@@ -252,56 +289,66 @@ export default function OrderDetailScreen() {
             left={(props) => <IconButton {...props} icon="account" iconColor={theme.colors.primary} />}
           />
           <Card.Content>
-            <View style={styles.infoRow}>
-              <IconButton icon="account-circle" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text variant="bodySmall" style={styles.infoLabel}>Tên khách hàng</Text>
-                <Text variant="bodyLarge" style={styles.infoValue}>{order.customerName}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <IconButton icon="map-marker" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text variant="bodySmall" style={styles.infoLabel}>Địa chỉ giao hàng</Text>
-                <Text variant="bodyLarge" style={styles.infoValue}>{order.address}</Text>
-              </View>
-              <IconButton
-                icon="map"
-                mode="contained"
-                containerColor={theme.colors.primary}
-                iconColor="white"
-                size={20}
-                onPress={openMaps}
-                style={styles.mapButton}
-              />
-            </View>
-
-            <View style={styles.infoRow}>
-              <IconButton icon="phone" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text variant="bodySmall" style={styles.infoLabel}>Số điện thoại</Text>
-                <Text variant="bodyLarge" style={styles.infoValue}>{order.phone}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <IconButton icon="clock-outline" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text variant="bodySmall" style={styles.infoLabel}>Thời gian đặt hàng</Text>
-                <Text variant="bodyLarge" style={styles.infoValue}>{new Date(order.createdAt).toLocaleString("vi-VN")}</Text>
-              </View>
-            </View>
-
-            {order.notes && (
+            <View style={styles.infoSection}>
               <View style={styles.infoRow}>
-                <IconButton icon="note-text" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
+                <IconButton icon="account-circle" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
                 <View style={styles.infoContent}>
-                  <Text variant="bodySmall" style={styles.infoLabel}>Ghi chú</Text>
-                  <Text variant="bodyLarge" style={styles.infoValue}>{order.notes}</Text>
+                  <Text variant="bodySmall" style={styles.infoLabel}>Tên khách hàng</Text>
+                  <Text variant="bodyLarge" style={styles.infoValue}>{order.customerName}</Text>
                 </View>
               </View>
-            )}
+
+              <View style={styles.infoRow}>
+                <IconButton icon="map-marker" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
+                <View style={styles.infoContent}>
+                  <Text variant="bodySmall" style={styles.infoLabel}>Địa chỉ giao hàng</Text>
+                  <Text variant="bodyLarge" style={styles.infoValue}>{order.address}</Text>
+                </View>
+                <IconButton
+                  icon="map"
+                  mode="contained"
+                  containerColor={theme.colors.primary}
+                  iconColor="white"
+                  size={20}
+                  onPress={openMaps}
+                  style={styles.mapButton}
+                />
+              </View>
+
+              <View style={styles.infoRow}>
+                <IconButton icon="phone" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
+                <View style={styles.infoContent}>
+                  <Text variant="bodySmall" style={styles.infoLabel}>Số điện thoại</Text>
+                  <Text variant="bodyLarge" style={styles.infoValue}>{order.phone}</Text>
+                </View>
+              </View>
+
+              <View style={styles.infoRow}>
+                <IconButton icon="clock-outline" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
+                <View style={styles.infoContent}>
+                  <Text variant="bodySmall" style={styles.infoLabel}>Thời gian đặt hàng</Text>
+                  <Text variant="bodyLarge" style={styles.infoValue}>{new Date(order.createdAt).toLocaleString("vi-VN")}</Text>
+                </View>
+              </View>
+
+              {Boolean(order.notes) && (
+                <View style={styles.infoRow}>
+                  <IconButton icon="note-text" iconColor={theme.colors.textSecondary} size={20} style={styles.infoIcon} />
+                  <View style={styles.infoContent}>
+                    <Text variant="bodySmall" style={styles.infoLabel}>Ghi chú</Text>
+                    <Text variant="bodyLarge" style={styles.infoValue}>{order.notes}</Text>
+                  </View>
+                </View>
+              )}
+              <Button
+                mode="outlined"
+                icon="message-text-outline"
+                onPress={openCustomerChat}
+                style={styles.chatButton}
+              >
+                Nhắn khách hàng về đơn #{order.id}
+              </Button>
+            </View>
           </Card.Content>
         </Card>
 
@@ -418,6 +465,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: spacing.md,
   },
+  infoSection: {
+    width: "100%",
+  },
   infoIcon: {
     margin: 0,
     marginRight: spacing.md,
@@ -436,6 +486,10 @@ const styles = StyleSheet.create({
   },
   mapButton: {
     margin: 0,
+  },
+  chatButton: {
+    marginTop: spacing.xs,
+    alignSelf: "flex-start",
   },
   productRow: {
     flexDirection: "row",
