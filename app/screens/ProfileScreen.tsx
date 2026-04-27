@@ -1,5 +1,6 @@
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, Platform } from "react-native"
-import { Text, Card, Button, Avatar, Divider, List } from "react-native-paper"
+import { useState } from "react"
+import { View, ScrollView, StyleSheet, Alert, TouchableOpacity } from "react-native"
+import { Text, Card, Button, Avatar, Divider, Portal, Dialog } from "react-native-paper"
 import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useAuthContext } from "../context/AuthContext"
@@ -7,12 +8,14 @@ import { useOrderContext } from "../context/OrderContext"
 import InfoRow from "../../components/InfoRow"
 import HeaderBar from "../../components/HeaderBar"
 import LoadingOverlay from "../../components/LoadingOverlay"
-import { theme, spacing } from "../../styles/theme"
+import { theme, spacing, borderRadius } from "../../styles/theme"
 
 export default function ProfileScreen() {
   const { user, logout, isLoading: authLoading } = useAuthContext()
   const { orders, loading: ordersLoading } = useOrderContext()
   const navigation = useNavigation<any>()
+  const [logoutDialogVisible, setLogoutDialogVisible] = useState(false)
+  const [logoutLoading, setLogoutLoading] = useState(false)
 
   const completedOrders = orders.filter((order) => order.status === "completed")
   const completedToday = orders.filter((order) => {
@@ -21,32 +24,23 @@ export default function ProfileScreen() {
     return order.status === "completed" && orderDate === today
   })
 
-  const handleLogout = () => {
-    const title = "Đăng xuất"
-    const message = "Bạn có chắc chắn muốn đăng xuất?"
+  const openLogoutDialog = () => setLogoutDialogVisible(true)
 
-    const performLogout = async () => {
-      try {
-        await logout()
-      } catch {
-        if (Platform.OS === "web" && typeof window !== "undefined") {
-          window.alert("Không thể đăng xuất. Vui lòng thử lại.")
-        } else {
-          Alert.alert("Lỗi", "Không thể đăng xuất. Vui lòng thử lại.")
-        }
-      }
+  const closeLogoutDialog = () => {
+    if (logoutLoading) return
+    setLogoutDialogVisible(false)
+  }
+
+  const confirmLogout = async () => {
+    setLogoutLoading(true)
+    try {
+      await logout()
+      setLogoutDialogVisible(false)
+    } catch {
+      Alert.alert("Lỗi", "Không thể đăng xuất. Vui lòng thử lại.")
+    } finally {
+      setLogoutLoading(false)
     }
-
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      const ok = window.confirm(`${title}\n\n${message}`)
-      if (ok) void performLogout()
-      return
-    }
-
-    Alert.alert(title, message, [
-      { text: "Hủy", style: "cancel" },
-      { text: "Đăng xuất", onPress: () => void performLogout() },
-    ])
   }
 
   if (authLoading || ordersLoading) {
@@ -126,10 +120,33 @@ export default function ProfileScreen() {
         </Card>
 
         <Card style={styles.card}>
+          <Card.Title
+            title="Lịch sử"
+            titleStyle={styles.cardTitle}
+            left={(props) => <MaterialCommunityIcons {...props} name="history" size={24} color={theme.colors.primary} />}
+          />
+          <Card.Content style={styles.settingsContent}>
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate("DeliveryHistory" as never)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.settingIconContainer, { backgroundColor: theme.colors.secondaryContainer }]}>
+                  <MaterialCommunityIcons name="clipboard-text-clock-outline" size={20} color={theme.colors.secondary} />
+                </View>
+                <Text style={styles.settingItemText}>Lịch sử giao hàng</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
           <Card.Title 
             title="Cài đặt" 
             titleStyle={styles.cardTitle}
-            left={(props) => <MaterialCommunityIcons name="cog" size={24} color={theme.colors.primary} {...props} />}
+            left={(props) => <MaterialCommunityIcons {...props} name="cog" size={24} color={theme.colors.primary} />}
           />
           <Card.Content style={styles.settingsContent}>
             <TouchableOpacity
@@ -200,7 +217,7 @@ export default function ProfileScreen() {
           <Button
             mode="contained"
             icon="logout"
-            onPress={handleLogout}
+            onPress={openLogoutDialog}
             style={styles.logoutButton}
             buttonColor="#F44336"
           >
@@ -208,11 +225,64 @@ export default function ProfileScreen() {
           </Button>
         </View>
       </ScrollView>
+
+      <Portal>
+        <Dialog
+          visible={logoutDialogVisible}
+          onDismiss={closeLogoutDialog}
+          dismissable={!logoutLoading}
+          style={styles.confirmDialog}
+        >
+          <Dialog.Icon icon="logout" color={theme.colors.primary} />
+          <Dialog.Title style={styles.confirmDialogTitle}>Đăng xuất</Dialog.Title>
+          <Dialog.Content style={styles.confirmDialogContent}>
+            <Text variant="bodyLarge" style={styles.confirmDialogMessage}>
+              Bạn có chắc chắn muốn đăng xuất?
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.confirmDialogActions}>
+            <Button onPress={closeLogoutDialog} disabled={logoutLoading}>
+              Hủy
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor="#F44336"
+              textColor="#fff"
+              onPress={() => void confirmLogout()}
+              loading={logoutLoading}
+            >
+              Đăng xuất
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
+  confirmDialog: {
+    marginHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+  },
+  confirmDialogTitle: {
+    fontWeight: "700",
+    paddingTop: 0,
+  },
+  confirmDialogContent: {
+    paddingTop: 0,
+  },
+  confirmDialogMessage: {
+    color: theme.colors.onSurface,
+    lineHeight: 24,
+  },
+  confirmDialogActions: {
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

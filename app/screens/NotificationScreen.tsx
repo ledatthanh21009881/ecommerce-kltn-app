@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { View, StyleSheet, RefreshControl, TouchableOpacity, Pressable } from "react-native"
+import { View, StyleSheet, RefreshControl, TouchableOpacity, Pressable, Alert } from "react-native"
 import { Text, Card, ActivityIndicator, Chip } from "react-native-paper"
 import { useNavigation } from "@react-navigation/native"
 import { notificationService } from "../services/notificationService"
@@ -11,6 +11,7 @@ import EmptyState from "../../components/EmptyState"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
 import { FlatList } from "react-native"
 import { Notification } from "../../lib/types"
+import { navigateToShipperOrderDetail } from "../../lib/navigationHelpers"
 
 type NotifyTab = "messages" | "orders"
 
@@ -44,6 +45,13 @@ function isChatNotification(n: Notification): boolean {
   const p = n.payload
   if (p && (p as { type?: string }).type === "new_chat_message") return true
   return false
+}
+
+function isShipperRejectedOrderNotification(n: Notification): boolean {
+  const t = (n.type || "").toLowerCase()
+  if (t === "order_rejected_by_shipper") return true
+  const p = n.payload
+  return p?.type === "order_rejected_by_shipper"
 }
 
 export default function NotificationScreen() {
@@ -136,10 +144,21 @@ export default function NotificationScreen() {
       return
     }
 
-    if (notification.payload?.order_id) {
-      navigation.navigate("OrderDetail" as never, {
-        orderId: notification.payload.order_id.toString(),
-      } as never)
+    const rawOrderId = notification.payload?.order_id
+    if (rawOrderId != null) {
+      const oid = String(rawOrderId)
+      if (isShipperRejectedOrderNotification(notification)) {
+        Alert.alert(
+          "Xác nhận",
+          `Bạn có muốn mở chi tiết đơn #${oid}?`,
+          [
+            { text: "Hủy", style: "cancel" },
+            { text: "Xem đơn", onPress: () => navigateToShipperOrderDetail(navigation, oid) },
+          ],
+        )
+        return
+      }
+      navigateToShipperOrderDetail(navigation, oid)
     }
   }
 

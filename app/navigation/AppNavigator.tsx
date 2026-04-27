@@ -21,6 +21,7 @@ import NotificationScreen from "../screens/NotificationScreen"
 import ShippingGuideScreen from "../screens/ShippingGuideScreen"
 import ChatListScreen from "../screens/ChatListScreen"
 import ChatDetailScreen from "../screens/ChatDetailScreen"
+import DeliveryHistoryScreen from "../screens/DeliveryHistoryScreen"
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -112,6 +113,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="ShippingGuide" component={ShippingGuideScreen} />
+            <Stack.Screen name="DeliveryHistory" component={DeliveryHistoryScreen} />
           </>
         ) : (
           <>
@@ -146,12 +148,12 @@ export default function AppNavigator() {
                   },
                 },
               })
-            } else if (bannerData?.orderId) {
+            } else if (bannerData?.orderId != null) {
               navigation.navigate("Main", {
                 screen: "Đơn hàng",
                 params: {
                   screen: "OrderDetail",
-                  params: { orderId: bannerData.orderId },
+                  params: { orderId: String(bannerData.orderId) },
                 },
               })
             }

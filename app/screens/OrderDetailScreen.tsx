@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react"
 import { View, ScrollView, StyleSheet, Alert, Linking, Platform } from "react-native"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { Text, Card, Button, Divider, IconButton, Chip } from "react-native-paper"
+import { Text, Card, Button, Divider, IconButton, Chip, Portal, Dialog } from "react-native-paper"
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native"
 import { useOrderContext } from "../context/OrderContext"
 import HeaderBar from "../../components/HeaderBar"
@@ -16,6 +16,7 @@ import SlideToConfirm from "../../components/SlideToConfirm"
 import ShippingTimeline from "../../components/ShippingTimeline"
 import { getShippingStatusConfig } from "../constants/shippingStatus"
 import type { Order } from "../../lib/types"
+import { notificationService } from "../services/notificationService"
 
 /** Số shipper cần thu COD (ưu tiên cod_amount, không thì tổng đơn). */
 function codCollectAmount(order: Order): number {
@@ -41,6 +42,7 @@ export default function OrderDetailScreen() {
   const { orderId } = route.params as { orderId: string }
   const [order, setOrder] = useState<Order | null>(orders.find((o) => o.id === orderId) ?? null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [rejectDialogVisible, setRejectDialogVisible] = useState(false)
 
   useEffect(() => {
     const updated = orders.find((o) => o.id === orderId)
@@ -63,7 +65,12 @@ export default function OrderDetailScreen() {
     }, [orderId, fetchOrderById]),
   )
 
-  const handleAction = async (key: string, action: () => Promise<void>, successMessage?: string) => {
+  const handleAction = async (
+    key: string,
+    action: () => Promise<void>,
+    successMessage?: string,
+    onSuccess?: () => void,
+  ) => {
     setActionLoading(key)
     try {
       await action()
@@ -71,6 +78,15 @@ export default function OrderDetailScreen() {
       if (successMessage) {
         Alert.alert("Thành công", successMessage)
       }
+      if (key === "reject") {
+        try {
+          const count = await notificationService.getUnreadCount()
+          await notificationService.setBadgeCount(count)
+        } catch {
+          // ignore badge refresh errors
+        }
+      }
+      onSuccess?.()
     } catch (error: any) {
       Alert.alert("Lỗi", error?.message || "Không thể cập nhật trạng thái, vui lòng thử lại.")
     } finally {
@@ -86,22 +102,20 @@ export default function OrderDetailScreen() {
   const handleCompleteOrder = () =>
     handleAction("complete", () => completeOrder(orderId), "Đã hoàn tất đơn hàng")
 
-  const handleRejectOrder = () => {
-    Alert.alert(
-      "Từ chối đơn hàng",
-      "Bạn có chắc chắn muốn từ chối đơn này?",
-      [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Từ chối",
-          style: "destructive",
-          onPress: () =>
-            handleAction("reject", () => rejectOrder(orderId, "Shipper từ chối nhận đơn")),
-        },
-      ],
-      { cancelable: false },
-    )
+  const openRejectDialog = () => setRejectDialogVisible(true)
+
+  const closeRejectDialog = () => {
+    if (actionLoading === "reject") return
+    setRejectDialogVisible(false)
   }
+
+  const confirmRejectFromDialog = () =>
+    handleAction(
+      "reject",
+      () => rejectOrder(orderId, "Shipper từ chối nhận đơn"),
+      `Bạn đã từ chối thành công đơn #${orderId}.`,
+      () => setRejectDialogVisible(false),
+    )
 
   const openCamera = (action: "pickup" | "deliver") => {
     navigation.navigate("Camera" as never, { orderId, action } as never)
@@ -196,7 +210,7 @@ export default function OrderDetailScreen() {
             <Button
               mode="outlined"
               icon="close-circle-outline"
-              onPress={handleRejectOrder}
+              onPress={openRejectDialog}
               disabled={actionLoading !== null}
             >
               Từ chối
@@ -523,11 +537,65 @@ export default function OrderDetailScreen() {
           <Card.Content>{renderActions()}</Card.Content>
         </Card>
       </ScrollView>
+
+      <Portal>
+        <Dialog
+          visible={rejectDialogVisible}
+          onDismiss={closeRejectDialog}
+          dismissable={actionLoading !== "reject"}
+          style={styles.rejectDialog}
+        >
+          <Dialog.Icon icon="help-circle-outline" color={theme.colors.error} />
+          <Dialog.Title style={styles.rejectDialogTitle}>Từ chối đơn hàng</Dialog.Title>
+          <Dialog.Content style={styles.rejectDialogContent}>
+            <Text variant="bodyLarge" style={styles.rejectDialogMessage}>
+              {`Bạn có chắc chắn muốn từ chối đơn #${orderId}? Thao tác này không thể hoàn tác.`}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.rejectDialogActions}>
+            <Button onPress={closeRejectDialog} disabled={actionLoading === "reject"}>
+              Hủy
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor={theme.colors.error}
+              textColor="#fff"
+              onPress={() => void confirmRejectFromDialog()}
+              loading={actionLoading === "reject"}
+              disabled={actionLoading !== null && actionLoading !== "reject"}
+            >
+              Từ chối đơn
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
+  rejectDialog: {
+    marginHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+  },
+  rejectDialogTitle: {
+    fontWeight: "700",
+    paddingTop: 0,
+  },
+  rejectDialogContent: {
+    paddingTop: 0,
+  },
+  rejectDialogMessage: {
+    color: theme.colors.onSurface,
+    lineHeight: 24,
+  },
+  rejectDialogActions: {
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
