@@ -1,5 +1,5 @@
-import React from "react"
-import { View, ScrollView, StyleSheet } from "react-native"
+import React, { useCallback, useState } from "react"
+import { View, ScrollView, StyleSheet, RefreshControl } from "react-native"
 import { Card, Text, IconButton } from "react-native-paper"
 import { useNavigation } from "@react-navigation/native"
 import HeaderBar from "../../components/HeaderBar"
@@ -19,10 +19,26 @@ const FLOW: ShippingStatus[] = [
 
 export default function ShippingGuideScreen() {
 	const navigation = useNavigation<any>()
+	const [refreshing, setRefreshing] = useState(false)
+	const onRefresh = useCallback(() => {
+		setRefreshing(true)
+		queueMicrotask(() => setRefreshing(false))
+	}, [])
 	return (
 		<View style={styles.container}>
 			<HeaderBar title="Hướng dẫn giao hàng" onBack={() => navigation.goBack()} />
-			<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+			<ScrollView
+				style={styles.content}
+				showsVerticalScrollIndicator={false}
+				refreshControl={
+					<RefreshControl
+						refreshing={refreshing}
+						onRefresh={onRefresh}
+						colors={[theme.colors.primary]}
+						tintColor={theme.colors.primary}
+					/>
+				}
+			>
 				<Card style={styles.card}>
 					<Card.Title
 						title="Tiến trình giao hàng"

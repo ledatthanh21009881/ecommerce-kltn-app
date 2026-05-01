@@ -87,7 +87,33 @@ export function shipperConversationNavMeta(label?: string): {
 }
 
 class ChatService {
+  private readonly conversationsDebounceMs = 1500
+  private conversationsInflight = new Map<string, Promise<ConversationItem[]>>()
+  private conversationsCache = new Map<string, { fetchedAt: number; data: ConversationItem[] }>()
+
+  private buildConversationCacheKey(customerId?: number, filters?: ConversationQueryFilters): string {
+    return JSON.stringify({
+      customerId: customerId ?? null,
+      myShipperConversations: Boolean(filters?.myShipperConversations),
+      shipperId: filters?.shipperId ?? null,
+      orderId: filters?.orderId ?? null,
+      label: filters?.label ?? null,
+    })
+  }
+
   async getConversations(customerId?: number, filters?: ConversationQueryFilters): Promise<ConversationItem[]> {
+    const cacheKey = this.buildConversationCacheKey(customerId, filters)
+    const now = Date.now()
+    const cached = this.conversationsCache.get(cacheKey)
+    if (cached && now - cached.fetchedAt < this.conversationsDebounceMs) {
+      return cached.data
+    }
+
+    const inflight = this.conversationsInflight.get(cacheKey)
+    if (inflight) {
+      return inflight
+    }
+
     const qs = new URLSearchParams()
     if (filters?.myShipperConversations) {
       qs.set("my_shipper_conversations", "1")
@@ -98,10 +124,23 @@ class ChatService {
       if (filters?.label) qs.set("label", filters.label)
     }
     const query = qs.toString() ? `?${qs.toString()}` : ""
-    const res = await apiClient.get<ApiListResponse<ConversationItem>>(`/api/backend/v1/conversations${query}`)
-    if (!res?.success) return []
-    if (Array.isArray(res.data)) return res.data
-    return Array.isArray(res.data?.items) ? res.data.items : []
+    const fetchPromise = (async (): Promise<ConversationItem[]> => {
+      const res = await apiClient.get<ApiListResponse<ConversationItem>>(`/api/backend/v1/conversations${query}`)
+      let items: ConversationItem[] = []
+      if (res?.success) {
+        if (Array.isArray(res.data)) items = res.data
+        else items = Array.isArray(res.data?.items) ? res.data.items : []
+      }
+      this.conversationsCache.set(cacheKey, { fetchedAt: Date.now(), data: items })
+      return items
+    })()
+
+    this.conversationsInflight.set(cacheKey, fetchPromise)
+    try {
+      return await fetchPromise
+    } finally {
+      this.conversationsInflight.delete(cacheKey)
+    }
   }
 
   /**

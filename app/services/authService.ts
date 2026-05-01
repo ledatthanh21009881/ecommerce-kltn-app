@@ -39,6 +39,16 @@ interface ApiError {
 
 class AuthService {
   private currentApiBaseUrl: string | null = null
+  private readonly defaultPort = 8000
+  private readonly defaultLanHost = "192.168.1.6"
+
+  private normalizeBaseUrl(url: string): string {
+    return url.trim().replace(/\/+$/, "")
+  }
+
+  private buildBaseUrl(host: string): string {
+    return `http://${host}:${this.defaultPort}`
+  }
 
   // Get API base URL - auto-detect if not set
   async getApiBaseUrl(): Promise<string> {
@@ -48,36 +58,37 @@ class AuthService {
 
     // In web dev, always use local backend to avoid stale saved server IP.
     if (__DEV__ && Platform.OS === 'web') {
-      this.currentApiBaseUrl = "http://localhost:8000"
+      this.currentApiBaseUrl = this.buildBaseUrl("localhost")
       return this.currentApiBaseUrl
     }
 
     // 0) Prefer explicit env override if provided at build time (Expo public env)
     const envApi = (process.env as any)?.EXPO_PUBLIC_API_URL
     if (envApi && typeof envApi === 'string' && envApi.trim().length > 0) {
-      this.currentApiBaseUrl = envApi.trim()
+      this.currentApiBaseUrl = this.normalizeBaseUrl(envApi)
       return this.currentApiBaseUrl
     }
 
     // Try to get saved IP from AsyncStorage
     const savedApiUrl = await AsyncStorage.getItem("apiBaseUrl")
     if (savedApiUrl) {
-      this.currentApiBaseUrl = savedApiUrl
-      return savedApiUrl
+      this.currentApiBaseUrl = this.normalizeBaseUrl(savedApiUrl)
+      return this.currentApiBaseUrl
     }
 
     // If no saved IP, use default based on platform
     if (__DEV__) {
       if (Platform.OS === 'android') {
-        // For Android, try to detect IP automatically
-        // Will be set by detectServerIP() method
-        return "http://172.27.182.249:8000" // Default for Android Studio emulator
+        // Android emulator can always access host machine with 10.0.2.2.
+        // Real devices should use LAN IP and can be auto-detected on retry.
+        return this.buildBaseUrl("10.0.2.2")
       } else {
         // iOS
-        return "http://localhost:8000" // iOS simulator
+        return this.buildBaseUrl("localhost")
       }
     }
-    return "https://api.yourdomain.com" // Production
+    // For preview/internal builds without env, default to LAN HTTP.
+    return this.buildBaseUrl(this.defaultLanHost)
   }
 
   // Get server config from endpoint
@@ -109,71 +120,69 @@ class AuthService {
   // Auto-detect server IP by trying multiple possible IPs
   async detectServerIP(): Promise<string> {
     console.log("[AuthService] Starting server IP detection...")
-    
-    // List of possible IPs to try
-    const possibleIPs: string[] = []
-    
-    // 1. Try saved IP first
+
+    // Deduplicated list of candidate hosts
+    const possibleHosts: string[] = []
+
+    // 1) Try saved IP first
     const savedIP = await AsyncStorage.getItem("serverIP")
     if (savedIP) {
-      possibleIPs.push(savedIP)
+      possibleHosts.push(savedIP.trim())
     }
-    
-    // 2. Add common IPs based on platform
+
+    // 2) Add platform common hosts
     if (Platform.OS === 'android') {
-      possibleIPs.push("172.20.10.4") // Android Studio emulator
+      possibleHosts.push("10.0.2.2")
+      possibleHosts.push(this.defaultLanHost)
     } else {
-      possibleIPs.push("localhost") // iOS simulator
+      possibleHosts.push("localhost")
     }
-    
-    // 3. Try to get IP from config endpoint using saved IP or default
-    for (const ip of possibleIPs) {
+
+    const uniqueHosts = [...new Set(possibleHosts.filter(Boolean))]
+
+    // 3) Try candidates directly
+    for (const host of uniqueHosts) {
       try {
-        const baseUrl = ip === "localhost" || ip === "172.20.10.4" || ip === "192.168.1.140 "
-          ? `http://${ip}:8000` 
-          : `http://${ip}:8000`
-        
+        const baseUrl = this.buildBaseUrl(host)
         console.log(`[AuthService] Trying to get config from: ${baseUrl}`)
         const config = await this.getServerConfig(baseUrl)
-        
-        // Save detected IP
-        await AsyncStorage.setItem("serverIP", config.serverIp)
-        await AsyncStorage.setItem("apiBaseUrl", config.apiUrl)
-        this.currentApiBaseUrl = config.apiUrl
-        
+
+        const normalizedApi = this.normalizeBaseUrl(config.apiUrl)
+        await AsyncStorage.setItem("serverIP", config.serverIp.trim())
+        await AsyncStorage.setItem("apiBaseUrl", normalizedApi)
+        this.currentApiBaseUrl = normalizedApi
+
         console.log(`[AuthService] Server IP detected: ${config.serverIp}`)
-        return config.apiUrl
+        return normalizedApi
       } catch (error) {
-        console.log(`[AuthService] Failed to connect to ${ip}:`, error)
+        console.log(`[AuthService] Failed to connect to ${host}:`, error)
         continue
       }
     }
-    
-    // 4. If all failed, try common WiFi IP ranges
+
+    // 4) Fallback scan common LAN ranges
     const commonRanges = [
       "192.168.1", "192.168.0", "192.168.2",
       "10.0.0", "172.27", "172.28"
     ]
-    
+
     for (const range of commonRanges) {
-      // Try common last octets
-      for (let i = 1; i <= 255; i += 10) { // Try every 10th IP to speed up
-        const testIP = `${range}.${i}`
+      // Keep scan bounded to avoid very long login waits.
+      for (let i = 1; i <= 254; i += 16) {
+        const testHost = `${range}.${i}`
         try {
-          const baseUrl = `http://${testIP}:8000`
+          const baseUrl = this.buildBaseUrl(testHost)
           console.log(`[AuthService] Scanning: ${baseUrl}`)
-          
           const config = await this.getServerConfig(baseUrl)
-          
-          // Save detected IP
-          await AsyncStorage.setItem("serverIP", config.serverIp)
-          await AsyncStorage.setItem("apiBaseUrl", config.apiUrl)
-          this.currentApiBaseUrl = config.apiUrl
-          
+
+          const normalizedApi = this.normalizeBaseUrl(config.apiUrl)
+          await AsyncStorage.setItem("serverIP", config.serverIp.trim())
+          await AsyncStorage.setItem("apiBaseUrl", normalizedApi)
+          this.currentApiBaseUrl = normalizedApi
+
           console.log(`[AuthService] Server IP detected via scan: ${config.serverIp}`)
-          return config.apiUrl
+          return normalizedApi
         } catch (error) {
-          // Continue scanning
           continue
         }
       }
@@ -204,124 +213,127 @@ class AuthService {
   }
 
   async login(phone: string, password: string): Promise<{ user: DeliveryUser; token: string; refreshToken: string }> {
+    let lastError: any = null
     let apiBaseUrl = await this.getApiBaseUrl()
-    let retryWithDetection = false
-    
-    try {
-      console.log(`[AuthService] Attempting login to: ${apiBaseUrl}/api/mobile/v1/auth/login`)
-      console.log(`[AuthService] Phone: ${phone}`)
-      
-      const response = await this.fetchWithTimeout(
-        `${apiBaseUrl}/api/mobile/v1/auth/login`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ phone, password }),
-        },
-        15000 // 15 seconds timeout
-      )
 
-      console.log(`[AuthService] Response received: ${response.status} ${response.statusText}`)
-      
-      // Check if response is JSON
-      const contentType = response.headers.get("content-type")
-      console.log(`[AuthService] Content-Type: ${contentType}`)
-      
-      let result: LoginResponse | ApiError
+    // At most 2 attempts: current URL then one auto-detected URL.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        // Clone response to read text for logging, then parse JSON
-        const responseClone = response.clone()
-        const responseText = await responseClone.text()
-        console.log(`[AuthService] Response body: ${responseText.substring(0, 200)}...`)
-        
-        if (!contentType || !contentType.includes("application/json")) {
-          console.error(`[AuthService] Non-JSON response: ${responseText}`)
-          throw new Error(`Server trả về lỗi: ${response.status} ${response.statusText}`)
-        }
-        
-        // Parse the original response
-        result = await response.json()
-        console.log(`[AuthService] Parsed result - success: ${result.success}`)
-      } catch (parseError: any) {
-        console.error(`[AuthService] JSON parse error:`, parseError)
-        throw new Error("Không thể đọc phản hồi từ server. Vui lòng thử lại.")
-      }
+        console.log(`[AuthService] Attempting login to: ${apiBaseUrl}/api/mobile/v1/auth/login`)
+        console.log(`[AuthService] Phone: ${phone}`)
 
-      if (!response.ok || !result.success) {
-        const errorMessage = result.message || "Đăng nhập thất bại"
-        console.error(`[AuthService] Login failed: ${errorMessage}`)
-        throw new Error(errorMessage)
-      }
+        const response = await this.fetchWithTimeout(
+          `${apiBaseUrl}/api/mobile/v1/auth/login`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ phone, password }),
+          },
+          15000 // 15 seconds timeout
+        )
 
-      if (!result.success || !result.data) {
-        console.error(`[AuthService] Invalid response structure:`, result)
-        throw new Error("Phản hồi không hợp lệ từ server")
-      }
+        console.log(`[AuthService] Response received: ${response.status} ${response.statusText}`)
 
-      const { token, refresh_token, shipper } = result.data
+        // Check if response is JSON
+        const contentType = response.headers.get("content-type")
+        console.log(`[AuthService] Content-Type: ${contentType}`)
 
-      // Save tokens to AsyncStorage
-      await AsyncStorage.setItem("authToken", token)
-      await AsyncStorage.setItem("refreshToken", refresh_token)
-      await AsyncStorage.setItem("userData", JSON.stringify(shipper))
-
-      // Convert shipper data to DeliveryUser format
-      const user: DeliveryUser = {
-        id: shipper.user_id.toString(),
-        name: `${shipper.first_name} ${shipper.last_name}`,
-        phone: shipper.phone,
-        avatar: shipper.avatar_url || undefined,
-        joinDate: new Date().toISOString().split("T")[0], // You might want to get this from backend
-        totalDeliveries: shipper.total_delivered,
-        email: shipper.email,
-      }
-
-      console.log(`[AuthService] Login successful for user: ${user.name}`)
-      return { user, token, refreshToken: refresh_token }
-    } catch (error: any) {
-      console.error(`[AuthService] Login error:`, error)
-      
-      // Handle timeout and network errors - try to auto-detect IP
-      const isNetworkError = error.message && (
-        error.message.includes("timeout") ||
-        error.message.includes("Network request failed") ||
-        error.message.includes("Failed to fetch") ||
-        error.message.includes("NetworkError")
-      )
-      
-      if (isNetworkError && !retryWithDetection && !(__DEV__ && Platform.OS === 'web')) {
-        console.log("[AuthService] Network error detected, attempting to auto-detect server IP...")
+        let result: LoginResponse | ApiError
         try {
-          // Try to detect server IP automatically
-          apiBaseUrl = await this.detectServerIP()
-          retryWithDetection = true
-          
-          // Retry login with detected IP
-          console.log(`[AuthService] Retrying login with detected IP: ${apiBaseUrl}`)
-          return await this.login(phone, password) // Recursive call with new IP
-        } catch (detectError) {
-          console.error("[AuthService] Failed to detect server IP:", detectError)
-          throw new Error("Không thể kết nối đến server. Vui lòng:\n1. Kiểm tra backend có đang chạy không\n2. Kiểm tra kết nối mạng\n3. Thử lại sau")
+          // Clone response to read text for logging, then parse JSON
+          const responseClone = response.clone()
+          const responseText = await responseClone.text()
+          console.log(`[AuthService] Response body: ${responseText.substring(0, 200)}...`)
+
+          if (!contentType || !contentType.includes("application/json")) {
+            console.error(`[AuthService] Non-JSON response: ${responseText}`)
+            throw new Error(`Server trả về lỗi: ${response.status} ${response.statusText}`)
+          }
+
+          // Parse the original response
+          result = await response.json()
+          console.log(`[AuthService] Parsed result - success: ${result.success}`)
+        } catch (parseError: any) {
+          console.error(`[AuthService] JSON parse error:`, parseError)
+          throw new Error("Không thể đọc phản hồi từ server. Vui lòng thử lại.")
+        }
+
+        if (!response.ok || !result.success) {
+          const errorMessage = result.message || "Đăng nhập thất bại"
+          console.error(`[AuthService] Login failed: ${errorMessage}`)
+          throw new Error(errorMessage)
+        }
+
+        if (!result.success || !result.data) {
+          console.error(`[AuthService] Invalid response structure:`, result)
+          throw new Error("Phản hồi không hợp lệ từ server")
+        }
+
+        const { token, refresh_token, shipper } = result.data
+
+        // Save tokens to AsyncStorage
+        await AsyncStorage.setItem("authToken", token)
+        await AsyncStorage.setItem("refreshToken", refresh_token)
+        await AsyncStorage.setItem("userData", JSON.stringify(shipper))
+
+        // Convert shipper data to DeliveryUser format
+        const user: DeliveryUser = {
+          id: shipper.user_id.toString(),
+          name: `${shipper.first_name} ${shipper.last_name}`,
+          phone: shipper.phone,
+          avatar: shipper.avatar_url || undefined,
+          joinDate: new Date().toISOString().split("T")[0], // You might want to get this from backend
+          totalDeliveries: shipper.total_delivered,
+          email: shipper.email,
+        }
+
+        console.log(`[AuthService] Login successful for user: ${user.name}`)
+        return { user, token, refreshToken: refresh_token }
+      } catch (error: any) {
+        console.error(`[AuthService] Login error:`, error)
+        lastError = error
+
+        const isNetworkError = error.message && (
+          error.message.includes("timeout") ||
+          error.message.includes("Network request failed") ||
+          error.message.includes("Failed to fetch") ||
+          error.message.includes("NetworkError")
+        )
+
+        const canRetryWithDetection =
+          isNetworkError &&
+          attempt === 0 &&
+          !(__DEV__ && Platform.OS === 'web')
+
+        if (canRetryWithDetection) {
+          console.log("[AuthService] Network error detected, attempting to auto-detect server IP...")
+          try {
+            apiBaseUrl = await this.detectServerIP()
+            console.log(`[AuthService] Retrying login with detected IP: ${apiBaseUrl}`)
+            continue
+          } catch (detectError) {
+            console.error("[AuthService] Failed to detect server IP:", detectError)
+          }
         }
       }
-      
-      if (error.message && error.message.includes("timeout")) {
-        throw new Error("Kết nối quá lâu. Vui lòng kiểm tra:\n1. Backend có đang chạy không\n2. URL API: " + apiBaseUrl + "\n3. Nếu dùng thiết bị thật, hãy dùng IP máy tính")
-      }
-      
-      if (error.message && (error.message.includes("Network request failed") || error.message.includes("Failed to fetch") || error.message.includes("NetworkError"))) {
-        throw new Error("Không thể kết nối đến server. Vui lòng:\n1. Kiểm tra backend có đang chạy không\n2. Kiểm tra URL API: " + apiBaseUrl + "\n3. Nếu dùng thiết bị thật, hãy dùng IP máy tính thay vì localhost")
-      }
-      
-      // If it's already an Error with a message, throw it as is
-      if (error instanceof Error) {
-        throw error
-      }
-      
-      throw new Error(error.message || "Không thể kết nối đến server. Vui lòng thử lại sau.")
     }
+
+    const error = lastError
+    if (error?.message && error.message.includes("timeout")) {
+      throw new Error("Kết nối quá lâu. Vui lòng kiểm tra:\n1. Backend có đang chạy không\n2. URL API: " + apiBaseUrl + "\n3. Nếu dùng thiết bị thật, hãy dùng IP máy tính")
+    }
+
+    if (error?.message && (error.message.includes("Network request failed") || error.message.includes("Failed to fetch") || error.message.includes("NetworkError"))) {
+      throw new Error("Không thể kết nối đến server. Vui lòng:\n1. Kiểm tra backend có đang chạy không\n2. Kiểm tra URL API: " + apiBaseUrl + "\n3. Nếu dùng thiết bị thật, hãy dùng IP máy tính thay vì localhost")
+    }
+
+    if (error instanceof Error) {
+      throw error
+    }
+
+    throw new Error(error?.message || "Không thể kết nối đến server. Vui lòng thử lại sau.")
   }
 
   async getCurrentUser(): Promise<DeliveryUser> {

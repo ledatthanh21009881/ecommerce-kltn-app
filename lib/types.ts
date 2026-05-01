@@ -61,6 +61,8 @@ export interface Order {
   shippingStatusUpdatedAt?: string
   shippingEvents?: ShippingEvent[]
   shippingProofs?: ShippingProof[]
+  destinationLatitude?: number | null
+  destinationLongitude?: number | null
   metadata?: Record<string, any>
 }
 

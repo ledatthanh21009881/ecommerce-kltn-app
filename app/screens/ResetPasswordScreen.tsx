@@ -1,12 +1,20 @@
 "use client"
 
-import { useState } from "react"
-import { View, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native"
+import { useState, useCallback } from "react"
+import {
+  View,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  RefreshControl,
+} from "react-native"
 import { Text, TextInput, Button, Card, IconButton } from "react-native-paper"
 import { useNavigation, useRoute } from "@react-navigation/native"
 import { authService } from "../services/authService"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
-import { LinearGradient } from 'expo-linear-gradient'
+import { LinearGradient } from "expo-linear-gradient"
 
 export default function ResetPasswordScreen() {
   const route = useRoute()
@@ -18,6 +26,22 @@ export default function ResetPasswordScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      if (__DEV__) {
+        try {
+          await authService.detectServerIP()
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
 
   const handleSubmit = async () => {
     if (!newPassword || !confirmPassword) {
@@ -71,97 +95,101 @@ export default function ResetPasswordScreen() {
         colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
         style={styles.background}
       >
-        <View style={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <IconButton
-              icon="arrow-left"
-              iconColor="white"
-              size={24}
-              onPress={() => navigation.goBack()}
-              style={styles.backButton}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
             />
-            <View style={styles.logoContainer}>
+          }
+        >
+          <View style={styles.inner}>
+            <View style={styles.header}>
               <IconButton
-                icon="lock-outline"
+                icon="arrow-left"
                 iconColor="white"
-                size={48}
-                style={styles.logoIcon}
+                size={24}
+                onPress={() => navigation.goBack()}
+                style={styles.backButton}
               />
+              <Text variant="displaySmall" style={styles.title}>
+                Đặt lại mật khẩu
+              </Text>
+              <Text variant="bodyLarge" style={styles.subtitle}>
+                Nhập mật khẩu mới cho tài khoản của bạn
+              </Text>
             </View>
-            <Text variant="displaySmall" style={styles.title}>
-              Đặt lại mật khẩu
-            </Text>
-            <Text variant="bodyLarge" style={styles.subtitle}>
-              Nhập mật khẩu mới cho tài khoản của bạn
-            </Text>
+
+            <Card style={styles.formCard}>
+              <Card.Content style={styles.form}>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    label="Mật khẩu mới"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    mode="outlined"
+                    secureTextEntry={!showNewPassword}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="lock" color={theme.colors.primary} />}
+                    right={
+                      <TextInput.Icon
+                        icon={showNewPassword ? "eye-off" : "eye"}
+                        color={theme.colors.textSecondary}
+                        onPress={() => setShowNewPassword(!showNewPassword)}
+                      />
+                    }
+                    outlineColor={theme.colors.border}
+                    activeOutlineColor={theme.colors.primary}
+                  />
+
+                  <TextInput
+                    label="Xác nhận mật khẩu"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    mode="outlined"
+                    secureTextEntry={!showConfirmPassword}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="lock-check" color={theme.colors.primary} />}
+                    right={
+                      <TextInput.Icon
+                        icon={showConfirmPassword ? "eye-off" : "eye"}
+                        color={theme.colors.textSecondary}
+                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                      />
+                    }
+                    outlineColor={theme.colors.border}
+                    activeOutlineColor={theme.colors.primary}
+                  />
+                </View>
+
+                <View style={styles.buttonContainer}>
+                  <Button
+                    mode="contained"
+                    onPress={handleSubmit}
+                    loading={loading}
+                    disabled={loading}
+                    style={styles.submitButton}
+                    contentStyle={styles.buttonContent}
+                    icon="check-circle"
+                  >
+                    Đặt lại mật khẩu
+                  </Button>
+                </View>
+
+                <View style={styles.footer}>
+                  <Text variant="bodySmall" style={styles.footerText}>
+                    Mật khẩu phải có ít nhất 6 ký tự
+                  </Text>
+                </View>
+              </Card.Content>
+            </Card>
           </View>
-
-          {/* Form */}
-          <Card style={styles.formCard}>
-            <Card.Content style={styles.form}>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  label="Mật khẩu mới"
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  mode="outlined"
-                  secureTextEntry={!showNewPassword}
-                  style={styles.input}
-                  left={<TextInput.Icon icon="lock" iconColor={theme.colors.primary} />}
-                  right={
-                    <TextInput.Icon
-                      icon={showNewPassword ? "eye-off" : "eye"}
-                      iconColor={theme.colors.textSecondary}
-                      onPress={() => setShowNewPassword(!showNewPassword)}
-                    />
-                  }
-                  outlineColor={theme.colors.border}
-                  activeOutlineColor={theme.colors.primary}
-                />
-
-                <TextInput
-                  label="Xác nhận mật khẩu"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  mode="outlined"
-                  secureTextEntry={!showConfirmPassword}
-                  style={styles.input}
-                  left={<TextInput.Icon icon="lock-check" iconColor={theme.colors.primary} />}
-                  right={
-                    <TextInput.Icon
-                      icon={showConfirmPassword ? "eye-off" : "eye"}
-                      iconColor={theme.colors.textSecondary}
-                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    />
-                  }
-                  outlineColor={theme.colors.border}
-                  activeOutlineColor={theme.colors.primary}
-                />
-              </View>
-
-              <View style={styles.buttonContainer}>
-                <Button
-                  mode="contained"
-                  onPress={handleSubmit}
-                  loading={loading}
-                  disabled={loading}
-                  style={styles.submitButton}
-                  contentStyle={styles.buttonContent}
-                  icon="check-circle"
-                >
-                  Đặt lại mật khẩu
-                </Button>
-              </View>
-
-              <View style={styles.footer}>
-                <Text variant="bodySmall" style={styles.footerText}>
-                  Mật khẩu phải có ít nhất 6 ký tự
-                </Text>
-              </View>
-            </Card.Content>
-          </Card>
-        </View>
+        </ScrollView>
       </LinearGradient>
     </KeyboardAvoidingView>
   )
@@ -174,30 +202,24 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
+  scrollContent: {
+    flexGrow: 1,
     padding: spacing.lg,
     paddingTop: 60,
+    justifyContent: "center",
+  },
+  inner: {
+    justifyContent: "center",
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: spacing.xl,
+    paddingTop: spacing.xl,
   },
   backButton: {
     position: 'absolute',
     left: 0,
     top: 0,
-    margin: 0,
-  },
-  logoContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.round,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    marginTop: spacing.xl,
-  },
-  logoIcon: {
     margin: 0,
   },
   title: {

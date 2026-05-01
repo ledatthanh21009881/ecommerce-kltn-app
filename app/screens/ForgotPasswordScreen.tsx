@@ -1,22 +1,43 @@
 "use client"
 
-import { useState } from "react"
-import { View, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native"
+import { useState, useCallback } from "react"
+import {
+  View,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  RefreshControl,
+} from "react-native"
 import { Text, TextInput, Button, Card, IconButton } from "react-native-paper"
 import { useNavigation } from "@react-navigation/native"
 import type { StackNavigationProp } from "@react-navigation/stack"
+import type { AuthStackParamList } from "../navigation/authStackTypes"
 import { authService } from "../services/authService"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
-import { LinearGradient } from 'expo-linear-gradient'
+import { LinearGradient } from "expo-linear-gradient"
 
 export default function ForgotPasswordScreen() {
-  type AuthStackParamList = {
-    VerifyOTPScreen: { email: string }
-  }
-
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
-  const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>()
+  const [refreshing, setRefreshing] = useState(false)
+  const navigation = useNavigation<StackNavigationProp<AuthStackParamList, "ForgotPassword">>()
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      if (__DEV__) {
+        try {
+          await authService.detectServerIP()
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
 
   const handleSubmit = async () => {
     if (!email) {
@@ -74,73 +95,77 @@ export default function ForgotPasswordScreen() {
         colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
         style={styles.background}
       >
-        <View style={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <IconButton
-              icon="arrow-left"
-              iconColor="white"
-              size={24}
-              onPress={() => navigation.goBack()}
-              style={styles.backButton}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
             />
-            <View style={styles.logoContainer}>
+          }
+        >
+          <View style={styles.inner}>
+            <View style={styles.header}>
               <IconButton
-                icon="lock-reset"
+                icon="arrow-left"
                 iconColor="white"
-                size={48}
-                style={styles.logoIcon}
+                size={24}
+                onPress={() => navigation.goBack()}
+                style={styles.backButton}
               />
+              <Text variant="displaySmall" style={styles.title}>
+                Quên mật khẩu
+              </Text>
+              <Text variant="bodyLarge" style={styles.subtitle}>
+                Nhập email để nhận mã xác nhận
+              </Text>
             </View>
-            <Text variant="displaySmall" style={styles.title}>
-              Quên mật khẩu
-            </Text>
-            <Text variant="bodyLarge" style={styles.subtitle}>
-              Nhập email để nhận mã xác nhận
-            </Text>
+
+            <Card style={styles.formCard}>
+              <Card.Content style={styles.form}>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    label="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    mode="outlined"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    style={styles.input}
+                    left={<TextInput.Icon icon="email" color={theme.colors.primary} />}
+                    outlineColor={theme.colors.border}
+                    activeOutlineColor={theme.colors.primary}
+                  />
+                </View>
+
+                <View style={styles.buttonContainer}>
+                  <Button
+                    mode="contained"
+                    onPress={handleSubmit}
+                    loading={loading}
+                    disabled={loading}
+                    style={styles.submitButton}
+                    contentStyle={styles.buttonContent}
+                    icon="send"
+                  >
+                    Gửi mã OTP
+                  </Button>
+                </View>
+
+                <View style={styles.footer}>
+                  <Text variant="bodySmall" style={styles.footerText}>
+                    Mã OTP sẽ được gửi đến email của bạn và có hiệu lực trong 10 phút
+                  </Text>
+                </View>
+              </Card.Content>
+            </Card>
           </View>
-
-          {/* Form */}
-          <Card style={styles.formCard}>
-            <Card.Content style={styles.form}>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  mode="outlined"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  style={styles.input}
-                  left={<TextInput.Icon icon="email" color={theme.colors.primary} />}
-                  outlineColor={theme.colors.border}
-                  activeOutlineColor={theme.colors.primary}
-                />
-              </View>
-
-              <View style={styles.buttonContainer}>
-                <Button
-                  mode="contained"
-                  onPress={handleSubmit}
-                  loading={loading}
-                  disabled={loading}
-                  style={styles.submitButton}
-                  contentStyle={styles.buttonContent}
-                  icon="send"
-                >
-                  Gửi mã OTP
-                </Button>
-              </View>
-
-              <View style={styles.footer}>
-                <Text variant="bodySmall" style={styles.footerText}>
-                  Mã OTP sẽ được gửi đến email của bạn và có hiệu lực trong 10 phút
-                </Text>
-              </View>
-            </Card.Content>
-          </Card>
-        </View>
+        </ScrollView>
       </LinearGradient>
     </KeyboardAvoidingView>
   )
@@ -153,30 +178,24 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
+  scrollContent: {
+    flexGrow: 1,
     padding: spacing.lg,
     paddingTop: 60,
+    justifyContent: "center",
+  },
+  inner: {
+    justifyContent: "center",
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: spacing.xl,
+    paddingTop: spacing.xl,
   },
   backButton: {
     position: 'absolute',
     left: 0,
     top: 0,
-    margin: 0,
-  },
-  logoContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.round,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    marginTop: spacing.xl,
-  },
-  logoIcon: {
     margin: 0,
   },
   title: {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { View, StyleSheet, Dimensions, RefreshControl, ScrollView, TouchableOpacity } from "react-native"
 import { Text, Card, ActivityIndicator } from "react-native-paper"
-import { useNavigation, useRoute } from "@react-navigation/native"
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native"
 import { useOrderContext } from "../context/OrderContext"
 import OrderCard from "../../components/OrderCard"
 import HeaderBar from "../../components/HeaderBar"
@@ -28,25 +28,42 @@ type FilterButton = {
 export default function OrderListScreen() {
   const navigation = useNavigation<any>()
   const route = useRoute()
-  const { orders, loading, loadingMore, pagination, error, refreshOrders, loadMoreOrders } = useOrderContext()
+  const {
+    orders,
+    loading,
+    loadingMore,
+    pagination,
+    error,
+    shippingTotals,
+    refreshShippingTotals,
+    refreshOrders,
+    loadMoreOrders,
+  } = useOrderContext()
 
   const routeParams = (route.params as { filter?: OrderFilter } | undefined)
   const initialFilter: OrderFilter = routeParams?.filter ?? "all"
   const [filter, setFilter] = useState<OrderFilter>(initialFilter)
 
   useEffect(() => {
-    // Load orders on mount
-    refreshOrders(filter === "all" ? undefined : filter)
+    void refreshOrders(filter === "all" ? undefined : filter)
   }, [])
 
   useEffect(() => {
-    // Refresh when filter changes
-    refreshOrders(filter === "all" ? undefined : filter)
+    void refreshOrders(filter === "all" ? undefined : filter)
   }, [filter])
 
-  const onRefresh = useCallback(() => {
-    refreshOrders(filter === "all" ? undefined : filter)
-  }, [filter, refreshOrders])
+  useFocusEffect(
+    useCallback(() => {
+      void refreshShippingTotals()
+    }, [refreshShippingTotals]),
+  )
+
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      refreshOrders(filter === "all" ? undefined : filter),
+      refreshShippingTotals(),
+    ])
+  }, [filter, refreshOrders, refreshShippingTotals])
 
   const onEndReached = useCallback(() => {
     if (pagination.hasMore && !loadingMore) {
@@ -114,8 +131,13 @@ export default function OrderListScreen() {
   ]
 
   const getStatusCount = (status: OrderFilter) => {
+    if (shippingTotals) {
+      if (status === "all") return shippingTotals.all
+      const n = shippingTotals.byStatus[status as keyof typeof shippingTotals.byStatus]
+      if (typeof n === "number") return n
+    }
     if (status === "all") return pagination.total || orders.length
-    return orders.filter(order => order.shippingStatus === status).length
+    return orders.filter((order) => order.shippingStatus === status).length
   }
 
   return (
@@ -208,7 +230,12 @@ export default function OrderListScreen() {
         contentContainerStyle={styles.ordersListContent}
         style={styles.ordersList}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
         }
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}

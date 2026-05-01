@@ -258,7 +258,7 @@ function OrderDetail({
   )
 }
 
-export default function DeliveryApp() {
+export default function VivieneDeliveryApp() {
   const [orders, setOrders] = useState<Order[]>(mockOrders)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [activeTab, setActiveTab] = useState("home")

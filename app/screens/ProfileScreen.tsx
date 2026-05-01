@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity } from "react-native"
+import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, RefreshControl } from "react-native"
 import { Text, Card, Button, Avatar, Divider, Portal, Dialog } from "react-native-paper"
 import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
@@ -11,11 +11,26 @@ import LoadingOverlay from "../../components/LoadingOverlay"
 import { theme, spacing, borderRadius } from "../../styles/theme"
 
 export default function ProfileScreen() {
-  const { user, logout, isLoading: authLoading } = useAuthContext()
-  const { orders, loading: ordersLoading } = useOrderContext()
+  const { user, logout, isLoading: authLoading, refreshToken } = useAuthContext()
+  const { orders, loading: ordersLoading, refreshOrders } = useOrderContext()
   const navigation = useNavigation<any>()
   const [logoutDialogVisible, setLogoutDialogVisible] = useState(false)
   const [logoutLoading, setLogoutLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await refreshOrders()
+      try {
+        await refreshToken()
+      } catch {
+        /* optional */
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const completedOrders = orders.filter((order) => order.status === "completed")
   const completedToday = orders.filter((order) => {
@@ -58,7 +73,17 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <HeaderBar title="Hồ sơ cá nhân" />
-      <ScrollView style={styles.scrollView}>
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+      >
         <Card style={styles.profileCard}>
           <Card.Content style={styles.profileContent}>
             {user.avatar ? (

@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import * as SplashScreen from "expo-splash-screen"
 import { NavigationContainer } from "@react-navigation/native"
 import { PaperProvider } from "react-native-paper"
 import { StatusBar } from "expo-status-bar"
@@ -10,6 +11,8 @@ import AppNavigator from "./app/navigation/AppNavigator"
 import { loadNotificationSoundPrefs } from "./app/services/notificationSoundSettings"
 import { theme } from "./styles/theme"
 import ErrorBoundary from "./components/ErrorBoundary"
+
+SplashScreen.preventAutoHideAsync().catch(() => {})
 
 export default function App() {
   useEffect(() => {

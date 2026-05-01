@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { View, StyleSheet } from "react-native"
 import { Text, ActivityIndicator, Button } from "react-native-paper"
+import { theme } from "../../styles/theme"
 
 export default function LoadingScreen() {
   const [showError, setShowError] = useState(false)
@@ -42,9 +43,9 @@ export default function LoadingScreen() {
       </View>
 
       <View style={styles.content}>
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text variant="headlineSmall" style={styles.title}>
-          Opening project...
+          Đang khởi động...
         </Text>
 
         {showError && (
@@ -66,7 +67,7 @@ export default function LoadingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#FF6600",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -90,8 +91,10 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   title: {
-    marginTop: 20,
+    marginTop: 16,
     textAlign: "center",
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   button: {
     marginTop: 20,

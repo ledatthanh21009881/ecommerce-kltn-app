@@ -34,6 +34,25 @@ class LocationService {
       longitude: position.coords.longitude,
     }
   }
+
+  async getCurrentPositionWithMeta() {
+    const hasPermission = await this.ensurePermission()
+    if (!hasPermission) {
+      throw new Error("Cần quyền truy cập vị trí để xác nhận trạng thái.")
+    }
+
+    const position = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    })
+
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy ?? undefined,
+      heading: position.coords.heading ?? undefined,
+      speed: position.coords.speed ?? undefined,
+    }
+  }
 }
 
 export const locationService = new LocationService()

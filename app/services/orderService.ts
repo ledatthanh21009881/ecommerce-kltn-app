@@ -1,6 +1,22 @@
 import { apiClient } from "./apiClient"
 import type { Order, OrderPaymentInfo, ShippingActionPayload, ShippingStatus } from "../../lib/types"
 
+/** Giống chip lọc trên OrderListScreen — API với limit=1 chỉ để đọc `pagination.total`. */
+export const SHIPPER_ORDER_LIST_FILTER_STATUSES = [
+  "new_request",
+  "accepted",
+  "picked_up",
+  "delivering",
+  "arrived",
+  "delivered",
+  "completed",
+] as const satisfies readonly ShippingStatus[]
+
+export type ShipperOrderShippingTotals = {
+  all: number
+  byStatus: Record<(typeof SHIPPER_ORDER_LIST_FILTER_STATUSES)[number], number>
+}
+
 interface GetOrdersParams {
   status?: string
   shippingStatus?: ShippingStatus
@@ -51,6 +67,9 @@ function parseJSONValue<T>(value: any): T | null {
 }
 
 function mapBackendOrderToOrder(backendOrder: any): Order {
+  let destinationLatitude: number | null = null
+  let destinationLongitude: number | null = null
+
   // Parse shipping address
   let address = ""
   if (backendOrder.shipping_address_snapshot) {
@@ -59,6 +78,14 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
         ? JSON.parse(backendOrder.shipping_address_snapshot)
         : backendOrder.shipping_address_snapshot
       if (addressData) {
+        const latRaw = addressData.lat ?? addressData.latitude
+        const lngRaw = addressData.lng ?? addressData.longitude
+        const parsedLat = Number(latRaw)
+        const parsedLng = Number(lngRaw)
+        if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng)) {
+          destinationLatitude = parsedLat
+          destinationLongitude = parsedLng
+        }
         address = [
           addressData.street,
           addressData.ward,
@@ -68,6 +95,25 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
       }
     } catch (e) {
       address = backendOrder.shipping_address_snapshot || ""
+    }
+  }
+
+  if (destinationLatitude == null || destinationLongitude == null) {
+    const fallbackLatRaw =
+      backendOrder.destination_lat ??
+      backendOrder.destinationLatitude ??
+      backendOrder.address_lat ??
+      backendOrder.latitude
+    const fallbackLngRaw =
+      backendOrder.destination_lng ??
+      backendOrder.destinationLongitude ??
+      backendOrder.address_lng ??
+      backendOrder.longitude
+    const fallbackLat = Number(fallbackLatRaw)
+    const fallbackLng = Number(fallbackLngRaw)
+    if (Number.isFinite(fallbackLat) && Number.isFinite(fallbackLng)) {
+      destinationLatitude = fallbackLat
+      destinationLongitude = fallbackLng
     }
   }
 
@@ -129,6 +175,8 @@ function mapBackendOrderToOrder(backendOrder: any): Order {
     shippingStatusUpdatedAt: backendOrder.shipping_status_updated_at,
     shippingEvents,
     shippingProofs,
+    destinationLatitude,
+    destinationLongitude,
     metadata: backendOrder.metadata || undefined,
   }
 }
@@ -215,6 +263,29 @@ class OrderService {
       console.error('[OrderService] Error fetching orders:', error)
       throw new Error(error.message || "Lỗi kết nối mạng. Vui lòng thử lại.")
     }
+  }
+
+  /**
+   * Tổng đơn theo từng shipping_status độc lập với list đang hiển thị (pagination.total của từng filter).
+   * Dùng cho badge số trên chip lọc.
+   */
+  async getShipperOrdersShippingTotals(): Promise<ShipperOrderShippingTotals> {
+    const allResult = await this.getOrders({ page: 1, limit: 1 })
+    const all = typeof allResult.pagination?.total === "number" ? allResult.pagination.total : 0
+
+    const perFiltered = await Promise.all(
+      SHIPPER_ORDER_LIST_FILTER_STATUSES.map((shippingStatus) =>
+        this.getOrders({ shippingStatus, page: 1, limit: 1 }),
+      ),
+    )
+
+    const byStatus = {} as ShipperOrderShippingTotals["byStatus"]
+    SHIPPER_ORDER_LIST_FILTER_STATUSES.forEach((s, i) => {
+      const total = perFiltered[i]?.pagination?.total
+      byStatus[s] = typeof total === "number" ? total : 0
+    })
+
+    return { all, byStatus }
   }
 
   async getOrderById(orderId: string): Promise<Order | null> {

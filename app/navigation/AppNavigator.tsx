@@ -1,10 +1,13 @@
+import { useEffect } from "react"
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
 import { createStackNavigator } from "@react-navigation/stack"
+import * as SplashScreen from "expo-splash-screen"
 import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useAuthContext } from "../context/AuthContext"
 import { useNotificationBanner } from "../context/NotificationBannerContext"
 import TopBannerNotification from "../../components/TopBannerNotification"
+import { theme } from "../../styles/theme"
 
 // Screens
 import LoginScreen from "../screens/LoginScreen"
@@ -85,7 +88,7 @@ function MainTabs() {
 
           return <MaterialCommunityIcons name={iconName as any} size={size} color={color} />
         },
-        tabBarActiveTintColor: "#2196F3",
+        tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "gray",
         headerShown: false,
       })}
@@ -102,6 +105,12 @@ export default function AppNavigator() {
   const { user, isLoading } = useAuthContext()
   const { bannerVisible, bannerData, hideBanner } = useNotificationBanner()
   const navigation = useNavigation<any>()
+
+  useEffect(() => {
+    if (!isLoading) {
+      void SplashScreen.hideAsync()
+    }
+  }, [isLoading])
 
   if (isLoading) {
     return <LoadingScreen />

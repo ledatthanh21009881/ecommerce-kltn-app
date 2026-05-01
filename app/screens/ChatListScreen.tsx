@@ -69,7 +69,7 @@ export default function ChatListScreen() {
 
   return (
     <View style={styles.container}>
-      <HeaderBar title="Tin nhan" />
+      <HeaderBar title="Tin nhắn" />
 
       <View style={styles.content}>
         {loading ? (
@@ -81,7 +81,14 @@ export default function ChatListScreen() {
             data={conversations}
             keyExtractor={(item) => String(item.conversation_id)}
             contentContainerStyle={styles.listContent}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[theme.colors.primary]}
+                tintColor={theme.colors.primary}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.center}>
                 <Text style={styles.emptyText}>Chưa có cuộc trò chuyện nào</Text>

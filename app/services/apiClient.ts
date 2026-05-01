@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Platform } from "react-native"
 import { authService } from "./authService"
+import { notifySessionExpired } from "./authSessionCoordinator"
 
 interface RequestOptions extends RequestInit {
   skipAuth?: boolean
@@ -8,6 +9,14 @@ interface RequestOptions extends RequestInit {
 
 class ApiClient {
   private refreshPromise: Promise<string> | null = null
+  private readonly refreshThresholdSeconds = 120
+
+  private async clearStoredAuthAndNotifyUi() {
+    await AsyncStorage.removeItem("authToken")
+    await AsyncStorage.removeItem("refreshToken")
+    await AsyncStorage.removeItem("userData")
+    notifySessionExpired()
+  }
 
   // Get base URL dynamically from authService
   private async getBaseURL(): Promise<string> {
@@ -33,13 +42,16 @@ class ApiClient {
    */
   private isTokenError(message: string): boolean {
     const lowerMessage = message.toLowerCase()
-    return (
-      lowerMessage.includes('invalid') ||
-      lowerMessage.includes('expired') ||
-      lowerMessage.includes('token') ||
-      lowerMessage.includes('unauthorized') ||
-      lowerMessage.includes('authentication')
-    )
+    return [
+      "invalid token",
+      "token invalid",
+      "token expired",
+      "expired token",
+      "jwt expired",
+      "unauthorized",
+      "not authenticated",
+      "authentication required",
+    ].some((phrase) => lowerMessage.includes(phrase))
   }
 
   /**
@@ -61,10 +73,7 @@ class ApiClient {
         return token
       } catch (error) {
         console.error('[ApiClient] Token refresh failed:', error)
-        // If refresh fails, clear tokens
-        await AsyncStorage.removeItem("authToken")
-        await AsyncStorage.removeItem("refreshToken")
-        await AsyncStorage.removeItem("userData")
+        await this.clearStoredAuthAndNotifyUi()
         throw error
       } finally {
         // Clear refresh promise
@@ -73,6 +82,34 @@ class ApiClient {
     })()
 
     return await this.refreshPromise
+  }
+
+  private parseJwtExpiry(token: string | null): number | null {
+    if (!token) return null
+    const parts = token.split(".")
+    if (parts.length < 2) return null
+    try {
+      const payload = parts[1]
+      const base64 = payload.replace(/-/g, "+").replace(/_/g, "/")
+      const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")
+      if (typeof atob !== "function") return null
+      const json = atob(padded)
+      const decoded = JSON.parse(json) as { exp?: number }
+      return typeof decoded.exp === "number" ? decoded.exp : null
+    } catch {
+      return null
+    }
+  }
+
+  private async shouldRefreshTokenNow(): Promise<boolean> {
+    const token = await this.getToken()
+    const exp = this.parseJwtExpiry(token)
+    if (!exp) {
+      // Unknown expiry: allow refresh as fallback
+      return true
+    }
+    const now = Math.floor(Date.now() / 1000)
+    return exp - now <= this.refreshThresholdSeconds
   }
 
   /**
@@ -133,7 +170,15 @@ class ApiClient {
       const isTokenErrorByStatus = !skipAuth && (response.status === 401 || response.status === 403)
 
       // If token error by status, try to refresh token and retry
+      // 401: always refresh (JWT may still look valid but server rejects)
+      // 403: only refresh when JWT is near expiry to avoid wiping session on unrelated 403
       if (isTokenErrorByStatus) {
+        const bypassThreshold = response.status === 401
+        const shouldRefresh = bypassThreshold || (await this.shouldRefreshTokenNow())
+        if (!shouldRefresh) {
+          const responseData = await response.json().catch(() => ({}))
+          throw new Error(responseData.message || `HTTP error! status: ${response.status}`)
+        }
         try {
           console.log('[ApiClient] Token error detected (status ' + response.status + '), refreshing token...')
           
@@ -163,6 +208,7 @@ class ApiClient {
             
             if (isStillTokenError) {
               console.error('[ApiClient] Token refresh failed, still getting token error')
+              await this.clearStoredAuthAndNotifyUi()
               throw new Error("Session expired. Please login again.")
             }
             
@@ -172,7 +218,6 @@ class ApiClient {
           console.log('[ApiClient] Request retried successfully after token refresh')
           return retryData
         } catch (refreshError: any) {
-          // If refresh fails, throw error
           console.error('[ApiClient] Token refresh failed:', refreshError)
           throw new Error(refreshError.message || "Session expired. Please login again.")
         }
@@ -181,11 +226,23 @@ class ApiClient {
       // Parse response body
       const responseData = await response.json().catch(() => ({}))
 
-      // Check if response message indicates token error (even if status is 200)
-      const isTokenErrorByMessage = !skipAuth && responseData.message && this.isTokenError(responseData.message)
+      // Only treat message as token error when API reports failure.
+      const isTokenErrorByMessage =
+        !skipAuth &&
+        !response.ok &&
+        Boolean(responseData?.message) &&
+        this.isTokenError(String(responseData.message))
 
       // If token error by message, try to refresh token and retry
       if (isTokenErrorByMessage) {
+        const bypassThreshold = response.status === 401
+        const shouldRefresh = bypassThreshold || (await this.shouldRefreshTokenNow())
+        if (!shouldRefresh) {
+          if (!response.ok) {
+            throw new Error(responseData.message || `HTTP error! status: ${response.status}`)
+          }
+          return responseData
+        }
         try {
           console.log('[ApiClient] Token error detected in message, refreshing token...', {
             message: responseData.message
@@ -217,6 +274,7 @@ class ApiClient {
             
             if (isStillTokenError) {
               console.error('[ApiClient] Token refresh failed, still getting token error')
+              await this.clearStoredAuthAndNotifyUi()
               throw new Error("Session expired. Please login again.")
             }
             
@@ -226,7 +284,6 @@ class ApiClient {
           console.log('[ApiClient] Request retried successfully after token refresh')
           return retryData
         } catch (refreshError: any) {
-          // If refresh fails, throw error
           console.error('[ApiClient] Token refresh failed:', refreshError)
           throw new Error(refreshError.message || "Session expired. Please login again.")
         }

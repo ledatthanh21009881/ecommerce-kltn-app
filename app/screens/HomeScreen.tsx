@@ -2,8 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import { View, ScrollView, StyleSheet, RefreshControl, Dimensions, Animated } from "react-native"
-import { Text, Card, FAB, IconButton } from "react-native-paper"
+import { Text, Card, IconButton } from "react-native-paper"
+import type { CompositeNavigationProp } from "@react-navigation/native"
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs"
+import type { StackNavigationProp } from "@react-navigation/stack"
+import type { HomeStackParamList } from "../navigation/homeStackTypes"
 import { useOrderContext } from "../context/OrderContext"
 import { useAuthContext } from "../context/AuthContext"
 import { useNotificationBanner } from "../context/NotificationBannerContext"
@@ -12,16 +16,26 @@ import OrderCard from "../../components/OrderCard"
 import LoadingOverlay from "../../components/LoadingOverlay"
 import ErrorMessage from "../../components/ErrorMessage"
 import StatsCard from "../../components/StatsCard"
-import QuickAction from "../../components/QuickAction"
 import EmptyState from "../../components/EmptyState"
 import { theme, spacing, shadows, borderRadius } from "../../styles/theme"
 import { LinearGradient } from "expo-linear-gradient"
-import { chatService, shipperConversationNavMeta } from "../services/chatService"
 
-const { width } = Dimensions.get('window')
+const { width } = Dimensions.get("window")
+
+type MainTabParamList = {
+  "Đơn hàng": undefined
+  "Đang làm": { filter?: string } | undefined
+  Chat: undefined
+  "Tài khoản": undefined
+}
+
+type HomeScreenNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<HomeStackParamList, "Home">,
+  BottomTabNavigationProp<MainTabParamList>
+>
 
 export default function HomeScreen() {
-  const navigation = useNavigation()
+  const navigation = useNavigation<HomeScreenNavigationProp>()
   const { orders, loading, error, refreshOrders } = useOrderContext()
   const { user } = useAuthContext()
   const { showBanner } = useNotificationBanner()
@@ -30,7 +44,6 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0)
   const lastCheckedNotificationId = React.useRef<number | null>(null)
   const previousUnreadCount = React.useRef<number>(0)
-  const lastChatUnreadSum = React.useRef<number | null>(null)
 
   const checkAndShowNewNotification = useCallback(async () => {
     try {
@@ -63,43 +76,6 @@ export default function HomeScreen() {
     }
   }, [showBanner])
 
-  const checkNewChatMessages = useCallback(async () => {
-    try {
-      const data = await chatService.getConversations(undefined, { myShipperConversations: true })
-      const sumUnread = data.reduce((s, c) => s + Number(c.unread_count || 0), 0)
-      if (lastChatUnreadSum.current === null) {
-        lastChatUnreadSum.current = sumUnread
-        return
-      }
-      if (sumUnread > lastChatUnreadSum.current) {
-        const withUnread = data.filter((c) => Number(c.unread_count) > 0)
-        const latest = [...withUnread].sort((a, b) => {
-          const ta = new Date(a.last_message_time || 0).getTime()
-          const tb = new Date(b.last_message_time || 0).getTime()
-          return tb - ta
-        })[0]
-        if (latest) {
-          const fullName = `${latest.first_name || ""} ${latest.last_name || ""}`.trim() || "Khách hàng"
-          const preview = (latest.last_message || "").trim() || "Tin nhắn mới"
-          const meta = shipperConversationNavMeta(latest.label)
-          showBanner({
-            title: "Tin nhắn mới",
-            message: `${fullName}: ${preview.slice(0, 100)}`,
-            chatNavigation: {
-              conversationId: latest.conversation_id,
-              title: fullName,
-              customerUserId: latest.customer_id,
-              ...meta,
-            },
-          })
-        }
-      }
-      lastChatUnreadSum.current = sumUnread
-    } catch (e) {
-      console.error("[HomeScreen] checkNewChatMessages:", e)
-    }
-  }, [showBanner])
-
   const loadUnreadCount = useCallback(async () => {
     try {
       const count = await notificationService.getUnreadCount()
@@ -123,25 +99,24 @@ export default function HomeScreen() {
       loadUnreadCount()
       // Also check for new notifications when screen focuses
       checkAndShowNewNotification()
-      void checkNewChatMessages()
       // Tạm thời tắt animation để test
       // Animated.timing(fadeAnim, {
       //   toValue: 1,
       //   duration: 800,
       //   useNativeDriver: true,
       // }).start()
-    }, [refreshOrders, loadUnreadCount, checkAndShowNewNotification, checkNewChatMessages]),
+    }, [refreshOrders, loadUnreadCount, checkAndShowNewNotification]),
   )
 
-  // Poll for new notifications + chat unread every 10 seconds when Home is focused
+  // Poll notification unread count every 30 seconds when Home is focused.
+  // Chat conversations are polled only in Chat screens.
   useFocusEffect(
     React.useCallback(() => {
       const interval = setInterval(() => {
         void loadUnreadCount()
-        void checkNewChatMessages()
-      }, 10000)
+      }, 30000)
       return () => clearInterval(interval)
-    }, [loadUnreadCount, checkNewChatMessages]),
+    }, [loadUnreadCount]),
   )
 
   const onRefresh = async () => {
@@ -196,7 +171,7 @@ export default function HomeScreen() {
                 size={24}
                 onPress={async () => {
                   await loadUnreadCount()
-                  navigation.navigate('Notification' as never)
+                  navigation.navigate("Notification")
                 }}
                 style={styles.notificationButton}
               />
@@ -246,43 +221,6 @@ export default function HomeScreen() {
             />
           </View>
 
-          {/* Quick Actions */}
-          <Card style={styles.quickActionsCard}>
-            <Card.Title 
-              title="Thao tác nhanh" 
-              titleStyle={styles.cardTitle}
-              left={(props) => <IconButton {...props} icon="lightning-bolt" iconColor={theme.colors.primary} />}
-            />
-            <Card.Content>
-              <View style={styles.quickActionsGrid}>
-                <QuickAction
-                  icon="map-marker"
-                  label="Bản đồ"
-                  onPress={() => {}}
-                  color={theme.colors.info}
-                />
-                <QuickAction
-                  icon="camera"
-                  label="Chụp ảnh"
-                  onPress={() => {}}
-                  color={theme.colors.success}
-                />
-                <QuickAction
-                  icon="phone"
-                  label="Gọi điện"
-                  onPress={() => {}}
-                  color={theme.colors.warning}
-                />
-                <QuickAction
-                  icon="chart-line"
-                  label="Thống kê"
-                  onPress={() => {}}
-                  color={theme.colors.tertiary}
-                />
-              </View>
-            </Card.Content>
-          </Card>
-
           {/* Recent Orders */}
           <Card style={styles.recentOrdersCard}>
             <Card.Title 
@@ -304,7 +242,7 @@ export default function HomeScreen() {
                   <OrderCard
                     key={order.id}
                     order={order}
-                    onPress={() => navigation.navigate("OrderDetail" as never, { orderId: order.id } as never)}
+                    onPress={() => navigation.navigate("OrderDetail", { orderId: order.id })}
                   />
                 ))
               ) : (
@@ -318,14 +256,6 @@ export default function HomeScreen() {
           </Card>
         </View>
       </ScrollView>
-
-      <FAB 
-        icon="refresh" 
-        style={styles.fab} 
-        onPress={onRefresh} 
-        loading={refreshing}
-        color="white"
-      />
     </View>
   )
 }
@@ -427,13 +357,4 @@ const styles = StyleSheet.create({
     ...shadows.medium,
   },
 
-  fab: {
-    position: "absolute",
-    margin: spacing.lg,
-    right: 0,
-    bottom: 0,
-    backgroundColor: theme.colors.primary,
-    borderRadius: borderRadius.round,
-    ...shadows.large,
-  },
 })

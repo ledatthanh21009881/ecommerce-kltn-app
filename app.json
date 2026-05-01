@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "mobile-app-delivery-new",
-    "slug": "mobile-app-delivery-new",
+    "name": "Viviene Delivery",
+    "slug": "viviene-delivery",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FF6600"
     },
     "plugins": [
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#ffffff"
+          "icon": "./logo.png",
+          "color": "#FFFFFF"
         }
       ],
       [
@@ -25,7 +25,8 @@
         {
           "photosPermission": "Cho phep truy cap anh de gui trong chat voi khach hang."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "ios": {
       "supportsTablet": true,
@@ -36,10 +37,11 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./logo.png",
+        "backgroundColor": "#FF6600"
       },
       "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
@@ -50,7 +52,7 @@
       "package": "com.thanhle02032003.mobileappdeliverynew"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./logo.png"
     },
     "extra": {
       "eas": {

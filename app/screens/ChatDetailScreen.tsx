@@ -5,6 +5,7 @@ import {
   View,
   StyleSheet,
   FlatList,
+  RefreshControl,
   Animated,
   Image,
   Alert,
@@ -145,6 +146,7 @@ export default function ChatDetailScreen() {
   const [peerTyping, setPeerTyping] = useState(false)
   const [pendingImages, setPendingImages] = useState<PendingImageDraft[]>([])
   const [imageZoomUri, setImageZoomUri] = useState<string | null>(null)
+  const [listRefreshing, setListRefreshing] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -218,6 +220,18 @@ export default function ChatDetailScreen() {
       setMessages([])
     }
   }, [])
+
+  const onRefreshMessages = useCallback(async () => {
+    const cid = activeConversationId
+    if (!cid) return
+    setListRefreshing(true)
+    try {
+      await loadMessagesFor(cid)
+      await chatService.markConversationRead(cid)
+    } finally {
+      setListRefreshing(false)
+    }
+  }, [activeConversationId, loadMessagesFor])
 
   useEffect(() => {
     let cancelled = false
@@ -610,6 +624,14 @@ export default function ChatDetailScreen() {
         <FlatList
           data={messages}
           keyExtractor={(item) => String(item.message_id)}
+          refreshControl={
+            <RefreshControl
+              refreshing={listRefreshing}
+              onRefresh={onRefreshMessages}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
           contentContainerStyle={styles.messagesContent}
           ListFooterComponent={
             peerTyping ? (

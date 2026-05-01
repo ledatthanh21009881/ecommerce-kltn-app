@@ -1,7 +1,15 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { View, StyleSheet, RefreshControl, TouchableOpacity, Pressable, Alert } from "react-native"
+import {
+  View,
+  StyleSheet,
+  RefreshControl,
+  TouchableOpacity,
+  Pressable,
+  Alert,
+  ScrollView,
+} from "react-native"
 import { Text, Card, ActivityIndicator, Chip } from "react-native-paper"
 import { useNavigation } from "@react-navigation/native"
 import { notificationService } from "../services/notificationService"
@@ -61,16 +69,18 @@ export default function NotificationScreen() {
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
   const [tab, setTab] = useState<NotifyTab>("orders")
+  const [pullRefreshing, setPullRefreshing] = useState(false)
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (opts?: { showFullScreenLoading?: boolean }) => {
+    const showLoader = opts?.showFullScreenLoading !== false
     try {
-      setLoading(true)
+      if (showLoader) setLoading(true)
       const data = await notificationService.getNotifications({ limit: 80 })
       setNotifications(data)
     } catch (error) {
       console.error("[NotificationScreen] Error loading notifications:", error)
     } finally {
-      setLoading(false)
+      if (showLoader) setLoading(false)
     }
   }
 
@@ -85,13 +95,18 @@ export default function NotificationScreen() {
   }
 
   useEffect(() => {
-    loadNotifications()
-    loadUnreadCount()
+    void loadNotifications({ showFullScreenLoading: true })
+    void loadUnreadCount()
   }, [])
 
-  const onRefresh = useCallback(() => {
-    loadNotifications()
-    loadUnreadCount()
+  const onRefresh = useCallback(async () => {
+    setPullRefreshing(true)
+    try {
+      await loadNotifications({ showFullScreenLoading: false })
+      await loadUnreadCount()
+    } finally {
+      setPullRefreshing(false)
+    }
   }, [])
 
   const messageItems = useMemo(() => notifications.filter(isChatNotification), [notifications])
@@ -247,17 +262,30 @@ export default function NotificationScreen() {
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : listData.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <EmptyState
-            icon={tab === "messages" ? "message-text-outline" : "package-variant"}
-            title={tab === "messages" ? "Chưa có thông báo tin nhắn" : "Chưa có thông báo đơn hàng"}
-            message={
-              tab === "messages"
-                ? "Khi khách nhắn tin, thông báo sẽ hiện ở đây. Chạm để mở cuộc trò chuyện."
-                : "Thông báo gán đơn mới sẽ hiện ở đây."
-            }
-          />
-        </View>
+        <ScrollView
+          style={styles.emptyScrollView}
+          contentContainerStyle={styles.emptyScrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
+        >
+          <View style={styles.emptyContainer}>
+            <EmptyState
+              icon={tab === "messages" ? "message-text-outline" : "package-variant"}
+              title={tab === "messages" ? "Chưa có thông báo tin nhắn" : "Chưa có thông báo đơn hàng"}
+              message={
+                tab === "messages"
+                  ? "Khi khách nhắn tin, thông báo sẽ hiện ở đây. Chạm để mở cuộc trò chuyện."
+                  : "Thông báo gán đơn mới sẽ hiện ở đây."
+              }
+            />
+          </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={listData}
@@ -265,7 +293,12 @@ export default function NotificationScreen() {
           keyExtractor={(item) => `${tab}-${item.notification_id}`}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+            <RefreshControl
+              refreshing={pullRefreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
           }
         />
       )}
@@ -322,11 +355,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  emptyScrollView: {
+    flex: 1,
+  },
+  emptyScrollContent: {
+    flexGrow: 1,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: spacing.lg,
+    minHeight: 320,
   },
   listContent: {
     padding: spacing.md,

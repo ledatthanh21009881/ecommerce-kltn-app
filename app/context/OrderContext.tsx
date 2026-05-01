@@ -1,9 +1,10 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
-import { orderService } from "../services/orderService"
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import { orderService, type ShipperOrderShippingTotals } from "../services/orderService"
 import type { Order, ShippingStatus } from "../../lib/types"
 import { locationService } from "../services/locationService"
+import { liveLocationTrackingService } from "../services/liveLocationTrackingService"
 
 interface OrderContextType {
   orders: Order[]
@@ -18,6 +19,9 @@ interface OrderContextType {
     hasMore: boolean
   }
   currentFilter: ShippingStatus | null
+  /** Tổng đơn theo filter API — dùng cho badge chip, không phụ thuộc list `orders` hiện tại */
+  shippingTotals: ShipperOrderShippingTotals | null
+  refreshShippingTotals: () => Promise<void>
   refreshOrders: (filter?: ShippingStatus) => Promise<void>
   loadMoreOrders: () => Promise<void>
   acceptOrder: (orderId: string) => Promise<void>
@@ -28,6 +32,7 @@ interface OrderContextType {
   completeOrder: (orderId: string) => Promise<void>
   rejectOrder: (orderId: string, note: string) => Promise<void>
   fetchOrderById: (orderId: string) => Promise<Order | null>
+  setPreferredTrackingOrder: (orderId: string | null) => void
 }
 
 const OrderContext = createContext<OrderContextType | undefined>(undefined)
@@ -45,6 +50,49 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     hasMore: false,
   })
   const [currentFilter, setCurrentFilter] = useState<ShippingStatus | null>(null)
+  const [preferredTrackingOrderId, setPreferredTrackingOrderId] = useState<string | null>(null)
+  const [shippingTotals, setShippingTotals] = useState<ShipperOrderShippingTotals | null>(null)
+
+  const isTrackableStatus = (status: ShippingStatus | undefined) =>
+    !!status && ["picked_up", "delivering", "arrived"].includes(status)
+
+  const getOrderActivityTime = (order: Order) => {
+    const ts = order.shippingStatusUpdatedAt || order.updatedAt || order.createdAt
+    const t = new Date(ts || 0).getTime()
+    return Number.isFinite(t) ? t : 0
+  }
+
+  useEffect(() => {
+    const preferredOrder = preferredTrackingOrderId
+      ? orders.find((order) => order.id === preferredTrackingOrderId && isTrackableStatus(order.shippingStatus))
+      : null
+
+    const activeOrder = preferredOrder ?? [...orders]
+      .filter((order) => isTrackableStatus(order.shippingStatus))
+      .sort((a, b) => getOrderActivityTime(b) - getOrderActivityTime(a))[0]
+
+    if (activeOrder?.id) {
+      void liveLocationTrackingService.startTracking(activeOrder.id)
+      return
+    }
+
+    liveLocationTrackingService.stopTracking()
+  }, [orders, preferredTrackingOrderId])
+
+  useEffect(() => {
+    return () => {
+      liveLocationTrackingService.stopTracking()
+    }
+  }, [])
+
+  const refreshShippingTotals = useCallback(async () => {
+    try {
+      const totals = await orderService.getShipperOrdersShippingTotals()
+      setShippingTotals(totals)
+    } catch {
+      /* giữ totals cũ nếu lỗi */
+    }
+  }, [])
 
   const refreshOrders = useCallback(async (filter?: ShippingStatus) => {
     setLoading(true)
@@ -117,6 +165,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     try {
       await orderService.acceptOrder(orderId)
       await syncOrderById(orderId)
+      setPreferredTrackingOrderId(orderId)
+      liveLocationTrackingService.stopTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể nhận đơn hàng")
     }
@@ -135,6 +185,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         longitude: coords.longitude,
       })
       await syncOrderById(orderId)
+      setPreferredTrackingOrderId(orderId)
+      await liveLocationTrackingService.startTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể lấy hàng")
     }
@@ -144,6 +196,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     try {
       await orderService.startDelivery(orderId)
       await syncOrderById(orderId)
+      setPreferredTrackingOrderId(orderId)
+      await liveLocationTrackingService.startTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể bắt đầu giao hàng")
     }
@@ -157,6 +211,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         longitude: coords.longitude,
       })
       await syncOrderById(orderId)
+      setPreferredTrackingOrderId(orderId)
+      await liveLocationTrackingService.startTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể xác nhận tới điểm giao")
     }
@@ -175,6 +231,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         longitude: coords.longitude,
       })
       await syncOrderById(orderId)
+      setPreferredTrackingOrderId(orderId)
+      await liveLocationTrackingService.startTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể giao hàng")
     }
@@ -184,6 +242,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     try {
       await orderService.completeOrder(orderId)
       await syncOrderById(orderId)
+      if (preferredTrackingOrderId === orderId) {
+        setPreferredTrackingOrderId(null)
+      }
+      liveLocationTrackingService.stopTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể hoàn tất đơn hàng")
     }
@@ -193,6 +255,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     try {
       await orderService.rejectOrder(orderId, note)
       await syncOrderById(orderId)
+      if (preferredTrackingOrderId === orderId) {
+        setPreferredTrackingOrderId(null)
+      }
+      liveLocationTrackingService.stopTracking(orderId)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Không thể từ chối đơn hàng")
     }
@@ -201,6 +267,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const fetchOrderById = async (orderId: string) => {
     return syncOrderById(orderId)
   }
+
+  const setPreferredTrackingOrder = useCallback((orderId: string | null) => {
+    setPreferredTrackingOrderId(orderId)
+    if (!orderId) {
+      liveLocationTrackingService.stopTracking()
+      return
+    }
+    const order = orders.find((item) => item.id === orderId)
+    if (order && isTrackableStatus(order.shippingStatus)) {
+      void liveLocationTrackingService.startTracking(orderId)
+    }
+  }, [orders])
 
   return (
     <OrderContext.Provider
@@ -211,6 +289,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         error,
         pagination,
         currentFilter,
+        shippingTotals,
+        refreshShippingTotals,
         refreshOrders,
         loadMoreOrders,
         acceptOrder,
@@ -221,6 +301,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         completeOrder,
         rejectOrder,
         fetchOrderById,
+        setPreferredTrackingOrder,
       }}
     >
       {children}

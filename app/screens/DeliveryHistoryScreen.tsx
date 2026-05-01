@@ -90,7 +90,14 @@ export default function DeliveryHistoryScreen() {
           data={orders}
           keyExtractor={(item) => item.id}
           contentContainerStyle={orders.length === 0 ? styles.emptyList : styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
           ListEmptyComponent={
             <EmptyState
               icon={tab === "completed" ? "truck-check" : "close-circle-outline"}

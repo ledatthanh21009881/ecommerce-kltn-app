@@ -113,14 +113,13 @@ export const theme = {
   fonts: configureFonts({ config: fontConfig }),
   colors: {
     ...MD3LightTheme.colors,
-    // Primary colors - Orange theme like Shopee Food
-    primary: '#FF6B35',
-    primaryContainer: '#FFE8E0',
+    // Primary — đồng bộ logo.png / splash (#FF6600)
+    primary: '#FF6600',
+    primaryContainer: '#FFE8DD',
     onPrimary: '#FFFFFF',
     onPrimaryContainer: '#2B1600',
     
-    // Secondary colors
-    secondary: '#FF8A65',
+    secondary: '#FF8533',
     secondaryContainer: '#FFDBCF',
     onSecondary: '#FFFFFF',
     onSecondaryContainer: '#2B1600',
@@ -171,9 +170,8 @@ export const theme = {
     completed: '#4CAF50',
     cancelled: '#F44336',
     
-    // Gradient colors
-    gradientStart: '#FF6B35',
-    gradientEnd: '#FF8A65',
+    gradientStart: '#FF6600',
+    gradientEnd: '#FF8533',
     
     // Shadow colors
     shadow: 'rgba(0, 0, 0, 0.1)',

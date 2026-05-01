@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { View, ScrollView, StyleSheet } from "react-native"
+import { View, ScrollView, StyleSheet, RefreshControl } from "react-native"
 import { Text, Card, Divider, Switch } from "react-native-paper"
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
 import HeaderBar from "../../components/HeaderBar"
@@ -18,6 +18,7 @@ export default function NotificationSettingsScreen() {
   const navigation = useNavigation<any>()
   const [soundOrders, setSoundOrders] = useState(true)
   const [soundMessages, setSoundMessages] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   const refresh = useCallback(async () => {
     await loadNotificationSoundPrefs()
@@ -34,7 +35,18 @@ export default function NotificationSettingsScreen() {
   return (
     <View style={styles.container}>
       <HeaderBar title="Cài đặt thông báo" onBack={() => navigation.goBack()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+      >
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>

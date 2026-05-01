@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { View, ScrollView, StyleSheet, Alert, Linking, Platform } from "react-native"
+import { View, ScrollView, StyleSheet, Alert, Linking, Platform, RefreshControl } from "react-native"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Text, Card, Button, Divider, IconButton, Chip, Portal, Dialog } from "react-native-paper"
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native"
@@ -17,12 +17,52 @@ import ShippingTimeline from "../../components/ShippingTimeline"
 import { getShippingStatusConfig } from "../constants/shippingStatus"
 import type { Order } from "../../lib/types"
 import { notificationService } from "../services/notificationService"
+import { locationService } from "../services/locationService"
 
 /** Số shipper cần thu COD (ưu tiên cod_amount, không thì tổng đơn). */
 function codCollectAmount(order: Order): number {
   const c = Number(order.codAmount ?? 0)
   const t = Number(order.totalAmount ?? 0)
   return c > 0 ? c : t
+}
+
+const COMPLETE_DISTANCE_THRESHOLD_METERS = 120
+
+function toFiniteNumber(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function extractDestination(order: Order): { latitude: number; longitude: number } | null {
+  const directLat = toFiniteNumber(order.destinationLatitude)
+  const directLng = toFiniteNumber(order.destinationLongitude)
+  if (directLat != null && directLng != null) {
+    return { latitude: directLat, longitude: directLng }
+  }
+
+  const metadata = order.metadata ?? {}
+  const fallbackLat = toFiniteNumber(
+    metadata.destination_lat ?? metadata.destinationLatitude ?? metadata.address_lat ?? metadata.latitude,
+  )
+  const fallbackLng = toFiniteNumber(
+    metadata.destination_lng ?? metadata.destinationLongitude ?? metadata.address_lng ?? metadata.longitude,
+  )
+  if (fallbackLat != null && fallbackLng != null) {
+    return { latitude: fallbackLat, longitude: fallbackLng }
+  }
+  return null
+}
+
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const earthRadius = 6371000
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return earthRadius * c
 }
 
 export default function OrderDetailScreen() {
@@ -37,12 +77,26 @@ export default function OrderDetailScreen() {
     arriveOrder,
     completeOrder,
     rejectOrder,
+    setPreferredTrackingOrder,
   } = useOrderContext()
 
   const { orderId } = route.params as { orderId: string }
   const [order, setOrder] = useState<Order | null>(orders.find((o) => o.id === orderId) ?? null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [rejectDialogVisible, setRejectDialogVisible] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const detail = await fetchOrderById(orderId)
+      if (detail) {
+        setOrder(detail)
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     const updated = orders.find((o) => o.id === orderId)
@@ -54,6 +108,7 @@ export default function OrderDetailScreen() {
   useFocusEffect(
     React.useCallback(() => {
       let isActive = true
+      setPreferredTrackingOrder(orderId)
       fetchOrderById(orderId).then((detail) => {
         if (detail && isActive) {
           setOrder(detail)
@@ -61,8 +116,9 @@ export default function OrderDetailScreen() {
       })
       return () => {
         isActive = false
+        setPreferredTrackingOrder(null)
       }
-    }, [orderId, fetchOrderById]),
+    }, [orderId, fetchOrderById, setPreferredTrackingOrder]),
   )
 
   const handleAction = async (
@@ -99,8 +155,39 @@ export default function OrderDetailScreen() {
     handleAction("start", () => startDelivery(orderId), "Đã bắt đầu giao hàng")
   const handleArriveOrder = () =>
     handleAction("arrive", () => arriveOrder(orderId), "Đã xác nhận tới điểm giao")
-  const handleCompleteOrder = () =>
-    handleAction("complete", () => completeOrder(orderId), "Đã hoàn tất đơn hàng")
+  const handleCompleteOrder = async () => {
+    if (!order) return
+    const destination = extractDestination(order)
+    if (!destination) {
+      Alert.alert(
+        "Chưa thể hoàn tất",
+        "Đơn hàng chưa có tọa độ điểm giao. Vui lòng kiểm tra lại địa chỉ có latitude/longitude rồi thử lại.",
+      )
+      return
+    }
+
+    try {
+      const current = await locationService.getCurrentPosition()
+      const distance = distanceMeters(
+        current.latitude,
+        current.longitude,
+        destination.latitude,
+        destination.longitude,
+      )
+      if (distance > COMPLETE_DISTANCE_THRESHOLD_METERS) {
+        Alert.alert(
+          "Chưa tới điểm giao",
+          `Bạn còn cách điểm giao khoảng ${Math.round(distance)}m. Chỉ có thể vuốt hoàn tất khi ở trong ${COMPLETE_DISTANCE_THRESHOLD_METERS}m.`,
+        )
+        return
+      }
+    } catch (error: any) {
+      Alert.alert("Không lấy được vị trí", error?.message || "Vui lòng bật GPS rồi thử lại.")
+      return
+    }
+
+    await handleAction("complete", () => completeOrder(orderId), "Đã hoàn tất đơn hàng")
+  }
 
   const openRejectDialog = () => setRejectDialogVisible(true)
 
@@ -299,7 +386,18 @@ export default function OrderDetailScreen() {
     <View style={styles.container}>
       <HeaderBar title="Chi tiết đơn hàng" onBack={() => navigation.goBack()} />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+      >
         <Card style={styles.statusCard}>
           <Card.Content style={styles.statusContent}>
             <View style={styles.statusHeader}>

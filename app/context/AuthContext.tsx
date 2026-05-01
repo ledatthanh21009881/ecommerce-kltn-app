@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from "react"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { authService } from "../services/authService"
+import { registerSessionExpiredHandler } from "../services/authSessionCoordinator"
 import { notificationService } from "../services/notificationService"
 import * as Notifications from "expo-notifications"
 import type { DeliveryUser } from "../../lib/types"
@@ -67,6 +68,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     initializeApp()
   }, [])
+
+  const clearSessionExpired = useCallback(async () => {
+    if (notificationListener.current) {
+      notificationListener.current.remove()
+      notificationListener.current = null
+    }
+    if (responseListener.current) {
+      responseListener.current.remove()
+      responseListener.current = null
+    }
+    try {
+      await notificationService.setBadgeCount(0)
+    } catch {
+      // ignore badge errors
+    }
+    await authService.logout()
+    setUser(null)
+  }, [])
+
+  useEffect(() => {
+    registerSessionExpiredHandler(() => {
+      void clearSessionExpired()
+    })
+    return () => registerSessionExpiredHandler(null)
+  }, [clearSessionExpired])
 
   useEffect(() => {
     // Setup notification handlers when user is logged in
@@ -156,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await AsyncStorage.removeItem("authToken")
             await AsyncStorage.removeItem("refreshToken")
             await AsyncStorage.removeItem("userData")
+            setUser(null)
           }
         }
       }
