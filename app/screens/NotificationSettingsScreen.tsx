@@ -26,6 +26,15 @@ export default function NotificationSettingsScreen() {
     setSoundMessages(getCachedSoundMessages())
   }, [])
 
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [refresh])
+
   useFocusEffect(
     useCallback(() => {
       void refresh()

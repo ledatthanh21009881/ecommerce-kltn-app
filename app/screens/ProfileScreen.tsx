@@ -1,8 +1,8 @@
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, RefreshControl } from "react-native"
 import { Text, Card, Button, Avatar, Divider, Portal, Dialog } from "react-native-paper"
 import { MaterialCommunityIcons } from "@expo/vector-icons"
-import { useNavigation } from "@react-navigation/native"
+import { useFocusEffect, useNavigation } from "@react-navigation/native"
 import { useAuthContext } from "../context/AuthContext"
 import { useOrderContext } from "../context/OrderContext"
 import InfoRow from "../../components/InfoRow"
@@ -12,7 +12,7 @@ import { theme, spacing, borderRadius } from "../../styles/theme"
 
 export default function ProfileScreen() {
   const { user, logout, isLoading: authLoading, refreshToken } = useAuthContext()
-  const { orders, loading: ordersLoading, refreshOrders } = useOrderContext()
+  const { orders, loading: ordersLoading, refreshOrders, shippingTotals, refreshShippingTotals } = useOrderContext()
   const navigation = useNavigation<any>()
   const [logoutDialogVisible, setLogoutDialogVisible] = useState(false)
   const [logoutLoading, setLogoutLoading] = useState(false)
@@ -21,7 +21,7 @@ export default function ProfileScreen() {
   const onRefresh = async () => {
     setRefreshing(true)
     try {
-      await refreshOrders()
+      await Promise.all([refreshOrders(), refreshShippingTotals()])
       try {
         await refreshToken()
       } catch {
@@ -32,7 +32,12 @@ export default function ProfileScreen() {
     }
   }
 
-  const completedOrders = orders.filter((order) => order.status === "completed")
+  useFocusEffect(
+    useCallback(() => {
+      void refreshShippingTotals()
+    }, [refreshShippingTotals]),
+  )
+
   const completedToday = orders.filter((order) => {
     const today = new Date().toDateString()
     const orderDate = new Date(order.createdAt).toDateString()
@@ -69,6 +74,12 @@ export default function ProfileScreen() {
       </View>
     )
   }
+
+  /** Tổng đơn shipping_status completed theo API (pagination), không phụ thuộc total_delivered lúc login */
+  const totalCompletedShipments =
+    typeof shippingTotals?.byStatus.completed === "number"
+      ? shippingTotals.byStatus.completed
+      : user.totalDeliveries
 
   return (
     <View style={styles.container}>
@@ -120,7 +131,7 @@ export default function ProfileScreen() {
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Text variant="headlineMedium" style={[styles.statNumber, { color: "#4CAF50" }]}>
-                  {user.totalDeliveries.toLocaleString("vi-VN")}
+                  {totalCompletedShipments.toLocaleString("vi-VN")}
                 </Text>
                 <Text variant="bodyMedium" style={styles.statLabel}>
                   Tổng đơn đã giao
