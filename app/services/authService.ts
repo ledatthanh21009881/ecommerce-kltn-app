@@ -191,6 +191,12 @@ class AuthService {
     throw new Error("Không tìm thấy server. Vui lòng kiểm tra backend có đang chạy không.")
   }
 
+  /** Xóa URL server đã lưu + cache trong bộ nhớ — dùng khi đổi IP (dev) hoặc trước khi detectServerIP. */
+  async clearServerCache(): Promise<void> {
+    await AsyncStorage.multiRemove(["apiBaseUrl", "serverIP"])
+    this.currentApiBaseUrl = null
+  }
+
   // Helper function to add timeout to fetch
   private async fetchWithTimeout(url: string, options: RequestInit, timeout: number = 15000): Promise<Response> {
     const controller = new AbortController()
