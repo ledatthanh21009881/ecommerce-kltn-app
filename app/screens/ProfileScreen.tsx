@@ -208,7 +208,18 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               style={styles.settingItem}
-              onPress={() => Alert.alert("Hỗ trợ", "Liên hệ: 1900-xxxx")}
+              onPress={() =>
+                navigation.navigate("Main", {
+                  screen: "Đang làm",
+                  params: {
+                    screen: "ChatDetail",
+                    params: {
+                      title: "Hỗ trợ — Admin",
+                      supportWithAdmin: true,
+                    },
+                  },
+                })
+              }
               activeOpacity={0.7}
             >
               <View style={styles.settingItemLeft}>

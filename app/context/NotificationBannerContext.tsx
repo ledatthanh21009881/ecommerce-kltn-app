@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 
-/** Tham số điều hướng tới màn ChatDetail (tab Chat). */
+/** Tham số điều hướng tới màn ChatDetail (stack tab «Đang làm»). */
 export type ChatBannerNavigationParams = {
   conversationId: number
   title: string

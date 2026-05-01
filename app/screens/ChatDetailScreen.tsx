@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  BackHandler,
   View,
   StyleSheet,
   FlatList,
@@ -135,7 +136,12 @@ export default function ChatDetailScreen() {
     customerUserId,
     shipperUserId,
     orderNumericId,
+    chatReadOnly: chatReadOnlyParam,
+    supportWithAdmin: supportWithAdminParam,
   } = route.params || {}
+
+  const chatReadOnly = Boolean(chatReadOnlyParam)
+  const supportWithAdmin = Boolean(supportWithAdminParam)
 
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(true)
@@ -156,8 +162,8 @@ export default function ChatDetailScreen() {
   const peerTypingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const canSend = useMemo(
-    () => input.trim().length > 0 || pendingImages.length > 0,
-    [input, pendingImages.length],
+    () => !chatReadOnly && (input.trim().length > 0 || pendingImages.length > 0),
+    [chatReadOnly, input, pendingImages.length],
   )
 
   useEffect(() => {
@@ -236,44 +242,72 @@ export default function ChatDetailScreen() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const userRaw = await AsyncStorage.getItem("userData")
-      if (userRaw) {
-        try {
-          const parsed = JSON.parse(userRaw)
-          const uid = Number(parsed?.id ?? parsed?.user_id)
-          if (Number.isFinite(uid)) setCurrentUserId(uid)
-        } catch {
-          // ignore
+      try {
+        let uidParsed: number | null = null
+        const userRaw = await AsyncStorage.getItem("userData")
+        if (userRaw) {
+          try {
+            const parsed = JSON.parse(userRaw)
+            const uid = Number(parsed?.id ?? parsed?.user_id)
+            if (Number.isFinite(uid)) {
+              uidParsed = uid
+              setCurrentUserId(uid)
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        setLoading(true)
+        let conv: number | null = null
+
+        if (supportWithAdmin) {
+          if (uidParsed != null && uidParsed > 0) {
+            conv = await chatService.ensureShipperSupportAdminConversation(uidParsed)
+          }
+        } else {
+          const cust = Number(customerUserId)
+          const ship = Number(shipperUserId)
+          const ord = Number(orderNumericId)
+          if (Number.isFinite(cust) && cust > 0 && Number.isFinite(ship) && ship > 0 && Number.isFinite(ord) && ord > 0) {
+            conv = await chatService.ensureShipperOrderConversation(cust, ship, ord)
+          } else if (conversationId != null && conversationId !== "") {
+            const n = Number(conversationId)
+            if (Number.isFinite(n) && n > 0) conv = n
+          }
+        }
+
+        if (cancelled) return
+        setActiveConversationId(conv)
+        if (conv) {
+          await loadMessagesFor(conv)
+          await chatService.markConversationRead(conv)
+        } else {
+          setMessages([])
+        }
+      } catch (e) {
+        console.error("[ChatDetailScreen] Load conversation failed:", e)
+        if (!cancelled) {
+          setMessages([])
+          setActiveConversationId(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
         }
       }
-
-      setLoading(true)
-      let conv: number | null = null
-
-      const cust = Number(customerUserId)
-      const ship = Number(shipperUserId)
-      const ord = Number(orderNumericId)
-      if (Number.isFinite(cust) && cust > 0 && Number.isFinite(ship) && ship > 0 && Number.isFinite(ord) && ord > 0) {
-        conv = await chatService.ensureShipperOrderConversation(cust, ship, ord)
-      } else if (conversationId != null && conversationId !== "") {
-        const n = Number(conversationId)
-        if (Number.isFinite(n) && n > 0) conv = n
-      }
-
-      if (cancelled) return
-      setActiveConversationId(conv)
-      if (conv) {
-        await loadMessagesFor(conv)
-        await chatService.markConversationRead(conv)
-      } else {
-        setMessages([])
-      }
-      setLoading(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [customerUserId, shipperUserId, orderNumericId, conversationId, loadMessagesFor])
+  }, [
+    customerUserId,
+    shipperUserId,
+    orderNumericId,
+    conversationId,
+    loadMessagesFor,
+    supportWithAdmin,
+  ])
 
   useFocusEffect(
     useCallback(() => {
@@ -429,6 +463,7 @@ export default function ChatDetailScreen() {
   }, [activeConversationId, bumpPeerTypingFromEvent, clearPeerTypingFromEvent, flushLocalTyping])
 
   const handleInputChange = (text: string) => {
+    if (chatReadOnly) return
     setInput(text)
     const trimmed = text.trim()
     const ws = wsRef.current
@@ -470,7 +505,7 @@ export default function ChatDetailScreen() {
   }, [])
 
   const handleSend = async () => {
-    if (!canSend || sending || activeConversationId == null) return
+    if (chatReadOnly || !canSend || sending || activeConversationId == null) return
     flushLocalTyping()
 
     const caption = input.trim()
@@ -537,6 +572,8 @@ export default function ChatDetailScreen() {
         appendMessageIfNew(saved)
         setInput("")
         relaySavedMessageToPeers(saved, convId)
+      } else {
+        Alert.alert("Không gửi được", "Đơn có thể đã hoàn thành hoặc cuộc hội thoại không còn nhận tin mới.")
       }
     } catch (error) {
       console.error("[ChatDetailScreen] Failed to send message:", error)
@@ -546,7 +583,7 @@ export default function ChatDetailScreen() {
   }
 
   const handlePickImage = async () => {
-    if (!activeConversationId || sending) return
+    if (chatReadOnly || !activeConversationId || sending) return
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (status !== "granted") {
       Alert.alert("Quyền truy cập", "Ứng dụng cần quyền thư viện ảnh để chọn hình.")
@@ -586,14 +623,43 @@ export default function ChatDetailScreen() {
     })
   }
 
+  /** Chat hỗ trợ admin mở từ Hồ sơ — về tab Tài khoản (cùng pattern navigate «Main» như `openOrderDetail`). */
+  const handleBack = useCallback(() => {
+    if (supportWithAdmin) {
+      navigation.navigate(
+        "Main" as never,
+        {
+          screen: "Tài khoản",
+        } as never,
+      )
+      return
+    }
+    navigation.goBack()
+  }, [supportWithAdmin, navigation])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!supportWithAdmin) return undefined
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        handleBack()
+        return true
+      })
+      return () => sub.remove()
+    }, [supportWithAdmin, handleBack]),
+  )
+
   return (
     <View style={styles.container}>
-      <HeaderBar title={title} onBack={() => navigation.goBack()} />
+      <HeaderBar title={title} onBack={handleBack} />
 
       <View style={styles.metaBar}>
         <Card style={styles.metaCard}>
           <Card.Content style={styles.metaContent}>
-            {orderId ? (
+            {supportWithAdmin ? (
+              <Text variant="bodySmall" style={styles.supportHint}>
+                Tin nhắn tới bộ phận quản trị Shop (không gắn đơn hàng).
+              </Text>
+            ) : orderId ? (
               <View style={styles.orderLinkRow}>
                 <Text variant="bodySmall" style={styles.orderText}>
                   Đơn hàng: {orderLabel || `#${orderId}`}
@@ -608,6 +674,11 @@ export default function ChatDetailScreen() {
             ) : null}
           </Card.Content>
         </Card>
+        {chatReadOnly ? (
+          <Text variant="bodySmall" style={styles.chatClosedHint}>
+            Đơn hàng đã hoàn thành hoặc đã hủy — chỉ xem lịch sử tin nhắn.
+          </Text>
+        ) : null}
       </View>
 
       {loading ? (
@@ -617,7 +688,9 @@ export default function ChatDetailScreen() {
       ) : !activeConversationId ? (
         <View style={styles.loadingWrap}>
           <Text variant="bodyMedium" style={styles.emptyHint}>
-            Khong mo duoc cuoc tro chuyen. Vui long thu lai sau khi tai don hang.
+            {supportWithAdmin
+              ? "Không tạo được cuộc hội thoại hỗ trợ. Kiểm tra đăng nhập và kết nối mạng."
+              : "Không mở được cuộc trò chuyện. Vui lòng thử lại sau khi tải chi tiết đơn."}
           </Text>
         </View>
       ) : (
@@ -677,55 +750,62 @@ export default function ChatDetailScreen() {
       )}
 
       <View style={styles.inputOuter}>
-        {pendingImages.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.pendingScroll}
-            contentContainerStyle={styles.pendingScrollContent}
-          >
-            {pendingImages.map((p) => (
-              <View key={p.id} style={styles.pendingThumbWrap}>
-                <Image source={{ uri: p.uri }} style={styles.pendingThumb} resizeMode="cover" />
-                <IconButton
-                  icon="close-circle"
-                  size={20}
-                  style={styles.pendingRemoveBtn}
-                  onPress={() => setPendingImages((prev) => prev.filter((x) => x.id !== p.id))}
-                  accessibilityLabel="Bo anh"
-                />
-              </View>
-            ))}
-          </ScrollView>
+        {!chatReadOnly ? (
+          <>
+            {pendingImages.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.pendingScroll}
+                contentContainerStyle={styles.pendingScrollContent}
+              >
+                {pendingImages.map((p) => (
+                  <View key={p.id} style={styles.pendingThumbWrap}>
+                    <Image source={{ uri: p.uri }} style={styles.pendingThumb} resizeMode="cover" />
+                    <IconButton
+                      icon="close-circle"
+                      size={20}
+                      style={styles.pendingRemoveBtn}
+                      onPress={() => setPendingImages((prev) => prev.filter((x) => x.id !== p.id))}
+                      accessibilityLabel="Bo anh"
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+            <View style={styles.inputRow}>
+              <IconButton
+                icon="image-outline"
+                size={22}
+                mode="contained-tonal"
+                disabled={!activeConversationId || sending}
+                onPress={handlePickImage}
+                accessibilityLabel="Chon anh"
+              />
+              <TextInput
+                mode="outlined"
+                placeholder={
+                  pendingImages.length > 0 ? "Thêm chú thích (tùy chọn)..." : "Nhập tin nhắn..."
+                }
+                value={input}
+                editable={Boolean(activeConversationId)}
+                onChangeText={handleInputChange}
+                onBlur={flushLocalTyping}
+                style={styles.input}
+              />
+              <IconButton
+                icon="send"
+                mode="contained"
+                containerColor={
+                  canSend && !sending && activeConversationId ? theme.colors.primary : "#d9d9d9"
+                }
+                iconColor="white"
+                onPress={handleSend}
+                disabled={!canSend || sending || !activeConversationId}
+              />
+            </View>
+          </>
         ) : null}
-        <View style={styles.inputRow}>
-          <IconButton
-            icon="image-outline"
-            size={22}
-            mode="contained-tonal"
-            disabled={!activeConversationId || sending}
-            onPress={handlePickImage}
-            accessibilityLabel="Chon anh"
-          />
-          <TextInput
-            mode="outlined"
-            placeholder={
-              pendingImages.length > 0 ? "Thêm chú thích (tùy chọn)..." : "Nhập tin nhắn..."
-            }
-            value={input}
-            onChangeText={handleInputChange}
-            onBlur={flushLocalTyping}
-            style={styles.input}
-          />
-          <IconButton
-            icon="send"
-            mode="contained"
-            containerColor={canSend && !sending && activeConversationId ? theme.colors.primary : "#d9d9d9"}
-            iconColor="white"
-            onPress={handleSend}
-            disabled={!canSend || sending || !activeConversationId}
-          />
-        </View>
       </View>
 
       <Modal
@@ -811,6 +891,16 @@ const styles = StyleSheet.create({
   },
   orderLinkBtn: {
     margin: 0,
+  },
+  chatClosedHint: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+  },
+  supportHint: {
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
   },
   messagesContent: {
     paddingHorizontal: spacing.md,

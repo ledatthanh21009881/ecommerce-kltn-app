@@ -25,7 +25,6 @@ const { width } = Dimensions.get("window")
 type MainTabParamList = {
   "Đơn hàng": undefined
   "Đang làm": { filter?: string } | undefined
-  Chat: undefined
   "Tài khoản": undefined
 }
 
@@ -109,7 +108,6 @@ export default function HomeScreen() {
   )
 
   // Poll notification unread count every 30 seconds when Home is focused.
-  // Chat conversations are polled only in Chat screens.
   useFocusEffect(
     React.useCallback(() => {
       const interval = setInterval(() => {

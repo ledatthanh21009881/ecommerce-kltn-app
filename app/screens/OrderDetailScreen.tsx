@@ -19,6 +19,12 @@ import type { Order } from "../../lib/types"
 import { notificationService } from "../services/notificationService"
 import { locationService } from "../services/locationService"
 
+/** Ẩn chat shipper ↔ khách khi đơn đã hoàn tất hoặc shipper đã từ chối (khớp chặn gửi trên backend). */
+function isShipperOrderChatUnavailable(shippingStatus: string | undefined | null): boolean {
+  const s = (shippingStatus ?? "").toLowerCase().trim()
+  return s === "completed" || s === "rejected"
+}
+
 /** Số shipper cần thu COD (ưu tiên cod_amount, không thì tổng đơn). */
 function codCollectAmount(order: Order): number {
   const c = Number(order.codAmount ?? 0)
@@ -244,6 +250,10 @@ export default function OrderDetailScreen() {
 
   const openCustomerChat = async () => {
     if (!order) return
+    if (isShipperOrderChatUnavailable(order.shippingStatus)) {
+      Alert.alert("Thông báo", "Đơn đã hoàn thành hoặc đã hủy — không thể nhắn tin.")
+      return
+    }
     const numericOrderId = Number(order.id)
     const customerUid = order.customerUserId
     if (!customerUid || customerUid <= 0 || !Number.isFinite(numericOrderId) || numericOrderId <= 0) {
@@ -275,6 +285,7 @@ export default function OrderDetailScreen() {
       role: "Khách hàng",
       orderId: order.id,
       orderLabel: `#${order.id}`,
+      chatReadOnly: false,
     } as never)
   }
 
@@ -431,16 +442,18 @@ export default function OrderDetailScreen() {
                 </Text>
               </View>
               <View style={styles.customerActionCol}>
-                <IconButton
-                  icon="message-text"
-                  mode="contained"
-                  containerColor={theme.colors.primary}
-                  iconColor="white"
-                  size={20}
-                  onPress={openCustomerChat}
-                  style={styles.mapButton}
-                  accessibilityLabel={`Nhắn khách hàng về đơn #${order.id}`}
-                />
+                {!isShipperOrderChatUnavailable(order.shippingStatus) ? (
+                  <IconButton
+                    icon="message-text"
+                    mode="contained"
+                    containerColor={theme.colors.primary}
+                    iconColor="white"
+                    size={20}
+                    onPress={openCustomerChat}
+                    style={styles.mapButton}
+                    accessibilityLabel={`Nhắn khách hàng về đơn #${order.id}`}
+                  />
+                ) : null}
               </View>
             </View>
 

@@ -14,5 +14,9 @@ export type HomeStackParamList = {
     orderNumericId?: number
     orderId?: string
     orderLabel?: string
+    /** Khóa ô nhập (đơn hoàn thành / đã hủy sau khi giao). */
+    chatReadOnly?: boolean
+    /** Chat hỗ trợ với admin Shop (conversation label support). */
+    supportWithAdmin?: boolean
   }
 }

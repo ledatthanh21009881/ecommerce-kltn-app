@@ -164,6 +164,14 @@ class ChatService {
     })
   }
 
+  /** Hội thoại shipper ↔ admin (hiện trong admin messenger, label `support`). */
+  async ensureShipperSupportAdminConversation(shipperUserId: number): Promise<number | null> {
+    const existing = await this.getConversations(shipperUserId, { label: "support" })
+    const first = existing[0]
+    if (first?.conversation_id) return Number(first.conversation_id)
+    return this.createConversation(shipperUserId, { label: "support" })
+  }
+
   async createConversation(
     customerId: number,
     opts?: { shipperId?: number; orderId?: number; label?: string },

@@ -22,7 +22,6 @@ import ProfileScreen from "../screens/ProfileScreen"
 import LoadingScreen from "../screens/LoadingScreen"
 import NotificationScreen from "../screens/NotificationScreen"
 import ShippingGuideScreen from "../screens/ShippingGuideScreen"
-import ChatListScreen from "../screens/ChatListScreen"
 import ChatDetailScreen from "../screens/ChatDetailScreen"
 import DeliveryHistoryScreen from "../screens/DeliveryHistoryScreen"
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen"
@@ -53,15 +52,6 @@ function HomeStack() {
   )
 }
 
-function ChatStack() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ChatList" component={ChatListScreen} />
-      <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
-    </Stack.Navigator>
-  )
-}
-
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -79,9 +69,6 @@ function MainTabs() {
             case "Tài khoản":
               iconName = focused ? "account" : "account-outline"
               break
-            case "Chat":
-              iconName = focused ? "message-text" : "message-text-outline"
-              break
             default:
               iconName = "circle"
           }
@@ -94,8 +81,38 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Đơn hàng" component={HomeStack} />
-      <Tab.Screen name="Đang làm" children={() => <OrderStack />} initialParams={{ filter: "delivering" }} />
-      <Tab.Screen name="Chat" component={ChatStack} />
+      <Tab.Screen
+        name="Đang làm"
+        component={OrderStack}
+        initialParams={{ filter: "delivering" }}
+        listeners={({ navigation }) => ({
+          /**
+           * Tab đã focus nhưng stack đang ở ChatDetail / chi tiết… — bấm lại «Đang làm» để về danh sách đơn.
+           * Không reset khi chuyển từ tab khác sang (preserve stack).
+           */
+          tabPress: (e) => {
+            const tabState = navigation.getState()
+            if (!tabState?.routes || typeof tabState.index !== "number") return
+
+            const currentTab = tabState.routes[tabState.index]
+            if (currentTab?.name !== "Đang làm") return
+
+            const nested = currentTab.state as { index?: number } | undefined
+            const stackIdx = nested?.index ?? 0
+            if (stackIdx <= 0) return
+
+            e.preventDefault()
+            navigation.navigate({
+              name: "Đang làm",
+              merge: true,
+              params: {
+                screen: "OrderList",
+                params: { filter: "delivering" },
+              },
+            } as never)
+          },
+        })}
+      />
       <Tab.Screen name="Tài khoản" component={ProfileScreen} />
     </Tab.Navigator>
   )
@@ -145,7 +162,7 @@ export default function AppNavigator() {
             if (bannerData?.chatNavigation) {
               const c = bannerData.chatNavigation
               navigation.navigate("Main", {
-                screen: "Chat",
+                screen: "Đang làm",
                 params: {
                   screen: "ChatDetail",
                   params: {

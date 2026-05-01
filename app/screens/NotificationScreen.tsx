@@ -128,7 +128,7 @@ export default function NotificationScreen() {
       "Khách hàng"
 
     navigation.navigate("Main", {
-      screen: "Chat",
+      screen: "Đang làm",
       params: {
         screen: "ChatDetail",
         params: {
